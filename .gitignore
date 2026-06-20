@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.python-version
+
+# Data / models / local warehouse
+*.duckdb
+*.duckdb.wal
+models_local/*.pkl
+models_local/*.txt
+data/
+*.parquet
+mlruns/
+
+# Secrets & local GCP state
+.gcp_project
+.gcp_bootstrap.log
+*-key.json
+service-account*.json
+application_default_credentials.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+infra/terraform/terraform.tfvars
+
+# Reports are generated; keep a sample, ignore the rest
+reports/*.md
+!reports/.gitkeep
+
+# local preview config
+.claude/
+launch.json
+
+# local logs
+*.log

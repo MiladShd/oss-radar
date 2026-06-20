@@ -1,0 +1,16 @@
+# Builds both images for linux/amd64 (Cloud Run's arch) and pushes to Artifact Registry.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build-pipeline
+    args: ['build', '-f', 'pipeline/Dockerfile', '-t', '${_REPO}/pipeline:${_TAG}', '-t', '${_REPO}/pipeline:latest', '.']
+  - name: gcr.io/cloud-builders/docker
+    id: build-dashboard
+    args: ['build', '-f', 'dashboard/Dockerfile', '-t', '${_REPO}/dashboard:${_TAG}', '-t', '${_REPO}/dashboard:latest', '.']
+images:
+  - '${_REPO}/pipeline:${_TAG}'
+  - '${_REPO}/pipeline:latest'
+  - '${_REPO}/dashboard:${_TAG}'
+  - '${_REPO}/dashboard:latest'
+options:
+  machineType: 'E2_HIGHCPU_8'
+timeout: 1800s

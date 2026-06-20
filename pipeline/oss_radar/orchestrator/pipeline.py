@@ -1,0 +1,146 @@
+"""End-to-end daily pipeline: ingest -> features -> train -> register -> score -> agents -> persist."""
+
+from __future__ import annotations
+
+import os
+import time
+from datetime import UTC, datetime
+
+import structlog
+
+from oss_radar.agents.crew import run_crew
+from oss_radar.agents.llm import Claude
+from oss_radar.config import Settings, get_settings
+from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
+from oss_radar.ingest.collector import collect
+from oss_radar.models.growth import GrowthModel
+from oss_radar.models.risk import RiskModel
+from oss_radar.models.scoring import build_predictions
+from oss_radar.registry import ModelRegistry
+from oss_radar.warehouse import get_warehouse
+
+log = structlog.get_logger(__name__)
+
+
+def _git_sha() -> str:
+    if os.environ.get("GIT_SHA"):
+        return os.environ["GIT_SHA"][:12]
+    try:
+        import subprocess
+
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                       text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dict:
+    settings = settings or get_settings()
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    started = datetime.now(UTC)
+    stages: dict[str, float] = {}
+    log.info("pipeline.start", run_id=run_id, backend=settings.backend, dry_run=dry_run)
+
+    wh = get_warehouse(settings)
+    wh.init_schema()
+
+    # 1) Ingest
+    t = time.time()
+    ing = collect(run_id, settings)
+    snapshots, history = ing["snapshots"], ing["history"]
+    wh.truncate("download_history")
+    wh.insert_rows("snapshots", snapshots)
+    wh.insert_rows("download_history", history)
+    stages["ingest"] = round(time.time() - t, 1)
+
+    import pandas as pd
+
+    snap_df = pd.DataFrame(snapshots)
+    hist_df = pd.DataFrame(history)
+
+    # 2) Features
+    t = time.time()
+    train_df = build_growth_training(hist_df)
+    score_df = build_growth_scoring(hist_df)
+    risk_df = build_risk_frame(snap_df)
+    stages["features"] = round(time.time() - t, 1)
+
+    # 3) Train
+    t = time.time()
+    growth = GrowthModel(seed=settings.random_seed)
+    growth_metrics = growth.fit(train_df) if len(train_df) >= settings.min_train_rows else {
+        "spearman": float("nan"), "note": "insufficient training rows", "n_train": len(train_df)}
+    risk = RiskModel(seed=settings.random_seed)
+    risk_metrics = risk.fit(risk_df)
+    stages["train"] = round(time.time() - t, 1)
+
+    # 4) Register (champion/challenger)
+    registry = ModelRegistry(settings)
+    model_runs_rows: list[dict] = []
+    model_metrics: dict[str, dict] = {}
+    for name, model_obj, metrics, params in [
+        ("growth", growth, growth_metrics, {"model": "LightGBMRegressor", "horizon_days": settings.growth_horizon_days}),
+        ("risk", risk, risk_metrics, {"model": "LightGBMClassifier"}),
+    ]:
+        if model_obj.model is not None:
+            champ, rows = registry.persist(wh, run_id, name, model_obj, metrics, params)
+        else:
+            champ, rows = False, []
+        model_runs_rows.extend(rows)
+        model_metrics[name] = {**metrics, "is_champion": champ}
+
+    # 5) Score
+    t = time.time()
+    if growth.model is not None and not score_df.empty:
+        predictions = build_predictions(run_id, score_df, snap_df, risk_df, growth, risk)
+    else:
+        predictions = pd.DataFrame()
+    stages["score"] = round(time.time() - t, 1)
+
+    # 6) Agents
+    t = time.time()
+    crew = run_crew(run_id, settings, Claude(settings), snap_df, predictions, model_metrics, dry_run=dry_run)
+    stages["agents"] = round(time.time() - t, 1)
+
+    # 7) Persist everything
+    if not predictions.empty:
+        wh.insert_rows("predictions", predictions.to_dict("records"))
+    if model_runs_rows:
+        wh.insert_rows("model_runs", model_runs_rows)
+    if crew["activities"]:
+        wh.insert_rows("agent_activity", crew["activities"])
+    _persist_features(wh, run_id, score_df, risk_df, snap_df)
+
+    finished = datetime.now(UTC)
+    counts = {
+        "packages": len(snapshots), "predictions": len(predictions),
+        "training_rows": len(train_df), "activities": len(crew["activities"]),
+    }
+    wh.insert_rows("pipeline_runs", [{
+        "run_id": run_id, "started_at": started, "finished_at": finished, "status": "success",
+        "stages": stages, "counts": counts, "git_sha": _git_sha(),
+    }])
+    log.info("pipeline.done", run_id=run_id, stages=stages, counts=counts, pr=crew.get("pr_url"))
+    return {"run_id": run_id, "counts": counts, "stages": stages,
+            "model_metrics": model_metrics, "pr_url": crew.get("pr_url")}
+
+
+def _persist_features(wh, run_id, score_df, risk_df, snap_df) -> None:
+    if score_df.empty:
+        return
+
+    risk_by_name = {r["name"]: r for _, r in risk_df.iterrows()} if not risk_df.empty else {}
+    cat_by_name = dict(zip(snap_df["name"], snap_df["category"], strict=False)) if not snap_df.empty else {}
+    rows = []
+    for _, r in score_df.iterrows():
+        rk = risk_by_name.get(r["name"], {})
+        row = {"run_id": run_id, "name": r["name"], "category": cat_by_name.get(r["name"]),
+               "feature_date": r.get("feature_date"), "is_scoring_row": True,
+               "at_risk_label": rk.get("at_risk_label")}
+        for col in ("log_d7", "log_d28", "velocity"):
+            row[{"log_d7": "downloads_7d", "log_d28": "downloads_28d", "velocity": "download_velocity"}[col]] = r.get(col)
+        for col in ("bus_factor", "scorecard_overall", "release_cadence_days", "dependency_count"):
+            if col in rk:
+                row[col] = rk.get(col)
+        rows.append(row)
+    wh.insert_rows("features", rows)

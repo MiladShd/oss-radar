@@ -1,0 +1,15 @@
+# Slim runtime for the dashboard (no ML libs — read-only over the warehouse).
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pandas==2.2.3
+pyarrow==18.1.0
+duckdb==1.1.3
+google-cloud-bigquery==3.27.0
+google-cloud-bigquery-storage==2.27.0
+db-dtypes==1.3.1
+python-dateutil==2.9.0.post0
+pydantic==2.9.2
+pydantic-settings==2.6.1
+structlog==24.4.0
+requests==2.32.3
+tenacity==9.0.0

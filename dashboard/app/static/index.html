@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OSS Radar — open-source intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#080b10; --bg2:#0d1218; --panel:#10171f; --panel2:#141d27;
+  --line:#1d2a36; --line2:#26384a;
+  --ink:#e8f0f5; --muted:#7d93a3; --faint:#4a5d6b;
+  --teal:#2ee6c4; --teal-d:#0f8f7c; --amber:#ffb347; --red:#ff5c6c;
+  --blue:#5cc8ff; --violet:#9a8cff;
+  --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+body{background:
+  radial-gradient(900px 500px at 85% -10%, rgba(46,230,196,.06), transparent 60%),
+  radial-gradient(700px 400px at 0% 0%, rgba(92,200,255,.05), transparent 55%), var(--bg);}
+a{color:var(--teal);text-decoration:none}
+.mono{font-family:var(--mono)}
+.wrap{max-width:1240px;margin:0 auto;padding:0 22px 80px}
+
+/* header */
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
+  background:linear-gradient(180deg,rgba(8,11,16,.92),rgba(8,11,16,.72));border-bottom:1px solid var(--line)}
+.hbar{max-width:1240px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:16px}
+.logo{display:flex;align-items:center;gap:12px}
+.radar{width:34px;height:34px;border-radius:50%;position:relative;flex:0 0 auto;
+  background:radial-gradient(circle,#0c1620 0%,#0a1118 70%);border:1px solid var(--line2);overflow:hidden}
+.radar::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg, rgba(46,230,196,.0) 0deg, rgba(46,230,196,.55) 40deg, rgba(46,230,196,0) 60deg);
+  animation:sweep 3.6s linear infinite}
+.radar::after{content:"";position:absolute;inset:6px;border-radius:50%;
+  background:radial-gradient(circle, rgba(46,230,196,.5) 0 1.6px, transparent 2px) 7px 9px/100% 100% no-repeat,
+            radial-gradient(circle, rgba(255,179,71,.7) 0 1.6px, transparent 2px) 20px 22px/100% 100% no-repeat;
+  border:1px solid rgba(255,255,255,.04)}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.brand b{font-weight:700;letter-spacing:.5px;font-size:18px}
+.brand span{display:block;font-size:11px;color:var(--muted);letter-spacing:.3px;margin-top:1px}
+nav.tabs{margin-left:auto;display:flex;gap:4px}
+nav.tabs button{font-family:var(--mono);font-size:12.5px;color:var(--muted);background:transparent;border:1px solid transparent;
+  padding:8px 13px;border-radius:8px;cursor:pointer;transition:.15s}
+nav.tabs button:hover{color:var(--ink);background:var(--panel)}
+nav.tabs button.on{color:var(--teal);border-color:var(--line2);background:var(--panel)}
+.gh{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line2);
+  padding:7px 11px;border-radius:8px;white-space:nowrap}
+.gh:hover{color:var(--ink);border-color:var(--teal-d)}
+
+.hero{padding:30px 0 10px}
+.hero h1{font-size:28px;margin:0 0 6px;font-weight:600;letter-spacing:-.3px}
+.hero p{color:var(--muted);margin:0;max-width:760px;font-size:14.5px;line-height:1.5}
+.runbar{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.pill{border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:999px}
+.pill .ok{color:var(--teal)} .pill .warn{color:var(--amber)} .pill .err{color:var(--red)}
+
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+.kpi{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.kpi .k{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+.kpi .v{font-size:30px;font-weight:600;margin-top:6px;letter-spacing:-.5px}
+.kpi .v small{font-size:13px;color:var(--muted);font-weight:400}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+.panel h3{margin:0 0 4px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.panel .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+.mvr{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+.mvr:first-of-type{border-top:none}
+.mvr .nm{font-family:var(--mono);font-size:13.5px;min-width:130px;font-weight:500}
+.mvr .nm small{display:block;color:var(--faint);font-size:10.5px;font-weight:400;text-transform:uppercase;letter-spacing:.4px}
+.bar{flex:1;height:8px;background:var(--bg);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;border-radius:6px}
+.scoreN{font-family:var(--mono);font-size:13px;min-width:30px;text-align:right;font-weight:600}
+.reasons{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.chip{font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line);
+  padding:2px 7px;border-radius:999px}
+
+/* table */
+.toolbar{display:flex;gap:10px;align-items:center;margin:6px 0 14px}
+.toolbar input{flex:1;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);
+  font-size:13px;padding:10px 13px;border-radius:10px;outline:none}
+.toolbar input:focus{border-color:var(--teal-d)}
+.toolbar select{background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:9px 11px;border-radius:10px}
+table{width:100%;border-collapse:collapse}
+th{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:left;text-transform:uppercase;letter-spacing:.4px;
+  padding:9px 10px;border-bottom:1px solid var(--line2);cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--ink)}
+td{padding:11px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--panel2)}
+.pkg{font-family:var(--mono);font-weight:500}
+.cat{font-family:var(--mono);font-size:10.5px;color:var(--muted);border:1px solid var(--line);padding:2px 7px;border-radius:999px}
+.num{font-family:var(--mono);text-align:right}
+.badge{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;font-weight:600}
+.b-high{color:#06281f;background:var(--teal)} .b-norm{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
+.b-decl{color:#2a1607;background:var(--amber)}
+.r-low{color:var(--teal)} .r-medium{color:var(--amber)} .r-high{color:var(--red)}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(2,4,7,.6);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.2s;z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--bg2);border-left:1px solid var(--line2);
+  transform:translateX(100%);transition:.25s cubic-bezier(.2,.7,.2,1);z-index:41;overflow-y:auto;padding:24px}
+.drawer.on{transform:none}
+.drawer .x{position:absolute;top:18px;right:18px;cursor:pointer;color:var(--muted);font-family:var(--mono)}
+.drawer h2{font-family:var(--mono);margin:0 0 2px;font-size:22px}
+.dscores{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+.dscore{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}
+.dscore .lab{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase}
+.dscore .big{font-size:34px;font-weight:600;font-family:var(--mono)}
+.spark{width:100%;height:60px;margin-top:8px}
+.metarow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)}
+.metarow span:first-child{color:var(--muted)}
+
+/* timeline */
+.tl-day{font-family:var(--mono);font-size:12px;color:var(--muted);margin:20px 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.act{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.act .ag{font-family:var(--mono);font-size:11px;min-width:108px;color:var(--blue)}
+.act .ag b{display:block;color:var(--ink);font-size:12px}
+.act .body{flex:1;font-size:13px;color:var(--ink)}
+.act .body small{color:var(--muted);font-family:var(--mono);font-size:11px}
+.loading{color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px;text-align:center}
+.foot{margin-top:40px;color:var(--faint);font-family:var(--mono);font-size:11.5px;text-align:center;line-height:1.7}
+@media(max-width:880px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}nav.tabs button{padding:8px 9px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="logo">
+      <div class="radar"></div>
+      <div class="brand"><b>OSS&nbsp;RADAR</b><span>open-source intelligence</span></div>
+    </div>
+    <nav class="tabs">
+      <button data-tab="overview" class="on">Overview</button>
+      <button data-tab="packages">Packages</button>
+      <button data-tab="models">Model history</button>
+      <button data-tab="agents">Agent activity</button>
+    </nav>
+    <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- OVERVIEW -->
+  <section data-view="overview">
+    <div class="hero">
+      <h1>Which packages are gaining momentum — and which are becoming risky dependencies?</h1>
+      <p>A self-managing pipeline ingests downloads, GitHub activity, dependency graphs, vulnerabilities and security-health
+         metrics every day, then trains gradient-boosted models to forecast adoption momentum and dependency risk across the
+         Python&nbsp;/&nbsp;AI ecosystem. AI agents retrain the models, write the brief, and open a PR.</p>
+      <div class="runbar" id="runbar"></div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3><span class="dot" style="background:var(--teal)"></span> Momentum movers</h3>
+        <div class="sub">Highest forecast 7-day adoption momentum</div>
+        <div id="movers"><div class="loading">scanning…</div></div>
+      </div>
+      <div class="panel">
+        <h3><span class="dot" style="background:var(--amber)"></span> Rising dependency risk</h3>
+        <div class="sub">Highest composite risk score</div>
+        <div id="risks"><div class="loading">scanning…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PACKAGES -->
+  <section data-view="packages" hidden>
+    <div class="hero"><h1 style="font-size:22px">Package leaderboard</h1>
+      <p>Click any row for the full signal breakdown, download trajectory and model reasoning.</p></div>
+    <div class="toolbar">
+      <input id="search" placeholder="filter packages…  e.g. vllm, langchain, vector" />
+      <select id="catf"><option value="">all categories</option></select>
+    </div>
+    <div class="panel" style="padding:6px 14px"><table id="ptable">
+      <thead><tr>
+        <th data-s="name">Package</th><th data-s="category">Category</th>
+        <th data-s="momentum_score" class="num">Momentum</th><th data-s="risk_score" class="num">Risk</th>
+        <th data-s="growth_pred_7d" class="num">Δ7d</th><th data-s="stars" class="num">Stars</th>
+        <th data-s="dependent_repos_count" class="num">Dependents</th><th data-s="vuln_count" class="num">Vulns</th>
+      </tr></thead><tbody id="pbody"></tbody></table></div>
+  </section>
+
+  <!-- MODELS -->
+  <section data-view="models" hidden>
+    <div class="hero"><h1 style="font-size:22px">Model improvement over time</h1>
+      <p>Every daily run retrains the growth and risk models and records held-out metrics. The champion/challenger gate only
+         promotes a model when it beats the previous champion — so this is the audit trail of how the intelligence improves.</p></div>
+    <div class="panel"><h3>Held-out metric history</h3>
+      <div class="sub">Growth model: Spearman rank correlation · Risk model: ROC-AUC · ◆ = promoted to champion</div>
+      <canvas id="mchart" height="110"></canvas></div>
+    <div class="panel" style="margin-top:18px;padding:6px 14px"><table>
+      <thead><tr><th>Run</th><th>Model</th><th>Version</th><th class="num">Metric</th><th class="num">n_train</th><th>Champion</th></tr></thead>
+      <tbody id="mbody"></tbody></table></div>
+  </section>
+
+  <!-- AGENTS -->
+  <section data-view="agents" hidden>
+    <div class="hero"><h1 style="font-size:22px">What the AI agents did</h1>
+      <p>Five agents manage the pipeline each day — they don't make the predictions, they run the system: checking ingestion
+         freshness, validating data quality, retraining and gating models, writing the brief, and opening the daily PR.</p></div>
+    <div class="panel"><div id="timeline"><div class="loading">loading activity…</div></div></div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"><div class="x" onclick="closeDrawer()">esc ✕</div><div id="dcontent"></div></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>n==null?"—":Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(n);
+const pct=n=>n==null?"—":(n>=0?"+":"")+(n*100).toFixed(1)+"%";
+let PKGS=[], sortKey="momentum_score", sortAsc=false, REPO="MiladShd/oss-radar";
+
+function momColor(v){return v>=66?"var(--teal)":v<=40?"var(--amber)":"var(--blue)";}
+function riskColor(v){return v>=66?"var(--red)":v>=40?"var(--amber)":"var(--teal-d)";}
+
+async function j(u){const r=await fetch(u);return r.json();}
+
+function tab(name){
+  $$("nav.tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===name));
+  $$("section[data-view]").forEach(s=>s.hidden=s.dataset.view!==name);
+  if(name==="packages"&&!PKGS.length) loadPackages();
+  if(name==="models") loadModels();
+  if(name==="agents") loadAgents();
+}
+$$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
+
+function moverRow(p,scoreKey,colorFn,levelKey){
+  const v=p[scoreKey]??0, lvl=p[levelKey]||"";
+  const reasons=(p.top_reasons||[]).slice(0,2).map(r=>`<span class="chip">${r}</span>`).join("");
+  return `<div class="mvr" onclick='openDrawer(${JSON.stringify(p.name)})'>
+    <div class="nm">${p.name}<small>${p.category||""}</small></div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="bar"><i style="width:${v}%;background:${colorFn(v)}"></i></div>
+        <div class="scoreN" style="color:${colorFn(v)}">${Math.round(v)}</div>
+      </div><div class="reasons">${reasons}</div>
+    </div></div>`;
+}
+
+async function loadOverview(){
+  const o=await j("/api/overview");
+  const lr=o.last_run||{};
+  const cnt=lr.counts? (typeof lr.counts==="string"?JSON.parse(lr.counts):lr.counts):{};
+  $("#runbar").innerHTML=[
+    `<div class="pill">last run <b class="mono">${lr.run_id||"—"}</b></div>`,
+    `<div class="pill"><span class="${lr.status==='success'?'ok':'warn'}">●</span> ${lr.status||"no runs yet"}</div>`,
+    `<div class="pill">${cnt.packages??o.tracked??0} packages</div>`,
+    `<div class="pill">${cnt.predictions??0} scored</div>`
+  ].join("");
+  $("#kpis").innerHTML=[
+    ["tracked packages",o.tracked??0,""],
+    ["avg momentum",o.avg_momentum??"—","/100"],
+    ["rising fast",o.rising??0,""],
+    ["high risk",o.high_risk??0,""]
+  ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
+  $("#movers").innerHTML=(o.movers||[]).map(p=>moverRow(p,"momentum_score",momColor,"momentum_label")).join("")||"<div class='loading'>run the pipeline to populate</div>";
+  $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>run the pipeline to populate</div>";
+}
+
+async function loadPackages(){
+  PKGS=await j("/api/packages");
+  const cats=[...new Set(PKGS.map(p=>p.category))].filter(Boolean).sort();
+  $("#catf").innerHTML='<option value="">all categories</option>'+cats.map(c=>`<option>${c}</option>`).join("");
+  renderTable();
+}
+$("#search").oninput=renderTable; $("#catf").onchange=renderTable;
+$$("#ptable th").forEach(th=>th.onclick=()=>{const k=th.dataset.s;sortAsc=(sortKey===k)?!sortAsc:false;sortKey=k;renderTable();});
+
+function renderTable(){
+  const q=($("#search").value||"").toLowerCase(), cf=$("#catf").value;
+  let rows=PKGS.filter(p=>(!cf||p.category===cf)&&(p.name.toLowerCase().includes(q)));
+  rows.sort((a,b)=>{let x=a[sortKey],y=b[sortKey];if(typeof x==="string")return sortAsc?x.localeCompare(y):y.localeCompare(x);
+    return sortAsc?(x??-1)-(y??-1):(y??-1)-(x??-1);});
+  $("#pbody").innerHTML=rows.map(p=>{
+    const ml=p.momentum_label, rl=p.risk_level;
+    const mb=ml==="high"?"b-high":ml==="declining"?"b-decl":"b-norm";
+    return `<tr class="row" onclick='openDrawer(${JSON.stringify(p.name)})'>
+      <td class="pkg">${p.name}</td><td><span class="cat">${p.category||""}</span></td>
+      <td class="num"><span class="badge ${mb}">${Math.round(p.momentum_score||0)}</span></td>
+      <td class="num"><b class="r-${rl}">${Math.round(p.risk_score||0)}</b></td>
+      <td class="num" style="color:${(p.growth_pred_7d||0)>=0?'var(--teal)':'var(--amber)'}">${pct(p.growth_pred_7d)}</td>
+      <td class="num">${fmt(p.stars)}</td><td class="num">${fmt(p.dependent_repos_count)}</td>
+      <td class="num" style="color:${p.vuln_count>0?'var(--amber)':'var(--muted)'}">${p.vuln_count??0}</td></tr>`;
+  }).join("")||`<tr><td colspan="8" class="loading">no matches</td></tr>`;
+}
+
+function sparkline(points,color){
+  if(!points||points.length<2)return"";
+  const xs=points.map((_,i)=>i), ys=points.map(p=>p.downloads??p.v??0);
+  const mn=Math.min(...ys),mx=Math.max(...ys),W=480,H=56,pad=3;
+  const sx=i=>pad+i*(W-2*pad)/(xs.length-1), sy=v=>H-pad-((v-mn)/((mx-mn)||1))*(H-2*pad);
+  const d=ys.map((v,i)=>`${i?'L':'M'}${sx(i).toFixed(1)} ${sy(v).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path d="${d}" fill="none" stroke="${color}" stroke-width="1.6"/>
+    <path d="${d} L${W-pad} ${H} L${pad} ${H} Z" fill="${color}" opacity="0.08"/></svg>`;
+}
+
+async function openDrawer(name){
+  $("#scrim").classList.add("on");$("#drawer").classList.add("on");
+  $("#dcontent").innerHTML="<div class='loading'>loading "+name+"…</div>";
+  const d=await j("/api/package/"+encodeURIComponent(name));
+  const p=d.prediction||{};
+  const repo=p.repo?`https://github.com/${p.repo}`:"#";
+  $("#dcontent").innerHTML=`
+    <h2>${name}</h2>
+    <div class="mono" style="color:var(--muted);font-size:12px">${p.category||""} · <a href="${repo}" target="_blank">${p.repo||"repo n/a"}</a></div>
+    <div class="dscores">
+      <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}</div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ7d ${pct(p.growth_pred_7d)}</div></div>
+      <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}</div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk</div></div>
+    </div>
+    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:4px">Daily downloads (180d)</div>
+    ${sparkline(d.downloads,"var(--teal)")||"<div class='mono' style='color:var(--faint);font-size:12px'>no series</div>"}
+    <div style="margin-top:18px">
+      ${[["Stars",fmt(p.stars)],["Monthly downloads",fmt(p.monthly_downloads)],["Dependent repos",fmt(p.dependent_repos_count)],
+         ["Known vulnerabilities",p.vuln_count??"—"],["OpenSSF scorecard",p.scorecard_overall!=null?p.scorecard_overall.toFixed(1)+"/10":"—"],
+         ["Days since release",p.days_since_last_release!=null?Math.round(p.days_since_last_release):"—"],
+         ["Bus factor (DDS)",p.bus_factor!=null?p.bus_factor.toFixed(2):"—"]]
+        .map(([k,v])=>`<div class="metarow"><span>${k}</span><span>${v}</span></div>`).join("")}
+    </div>
+    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:18px 0 6px">Why the model flagged it</div>
+    <div class="reasons">${(p.top_reasons||[]).map(r=>`<span class="chip">${r}</span>`).join("")||"—"}</div>`;
+}
+function closeDrawer(){$("#scrim").classList.remove("on");$("#drawer").classList.remove("on");}
+document.onkeydown=e=>{if(e.key==="Escape")closeDrawer();}
+
+let chart;
+async function loadModels(){
+  const rows=await j("/api/models");
+  const series={};
+  rows.forEach(r=>{const key=r.model_name+":"+r.metric_name;(series[key]=series[key]||[]).push(r);});
+  const want={"growth:spearman":["Growth · Spearman","#2ee6c4"],"risk:auc":["Risk · AUC","#ffb347"]};
+  const datasets=Object.entries(want).filter(([k])=>series[k]).map(([k,[lbl,col]])=>({
+    label:lbl,borderColor:col,backgroundColor:col+"22",tension:.3,pointRadius:5,
+    pointStyle:series[k].map(r=>r.is_champion?"rectRot":"circle"),
+    data:series[k].map(r=>({x:(r.run_id||"").slice(0,13),y:r.metric_value}))}));
+  if(chart)chart.destroy();
+  chart=new Chart($("#mchart"),{type:"line",data:{datasets},options:{
+    responsive:true,parsing:false,
+    scales:{x:{type:"category",ticks:{color:"#7d93a3",font:{family:"IBM Plex Mono",size:10}},grid:{color:"#16212c"}},
+            y:{ticks:{color:"#7d93a3",font:{family:"IBM Plex Mono"}},grid:{color:"#16212c"}}},
+    plugins:{legend:{labels:{color:"#e8f0f5",font:{family:"Space Grotesk"}}}}}});
+  $("#mbody").innerHTML=rows.slice().reverse().map(r=>`<tr><td class="mono">${r.run_id}</td><td>${r.model_name}</td>
+    <td class="mono" style="color:var(--muted)">${r.version}</td><td class="num">${r.metric_name} = ${r.metric_value!=null?r.metric_value.toFixed(3):"—"}</td>
+    <td class="num">${r.n_train??"—"}</td><td>${r.is_champion?'<span class="badge b-high">champion</span>':'<span class="cat">challenger</span>'}</td></tr>`).join("")
+    ||`<tr><td colspan="6" class="loading">no model runs yet</td></tr>`;
+}
+
+async function loadAgents(){
+  const acts=await j("/api/agents");
+  const byDay={};
+  acts.forEach(a=>{const d=(a.run_id||"").slice(0,8)||(a.ts||"").slice(0,10);(byDay[d]=byDay[d]||[]).push(a);});
+  const dotc=s=>s==="ok"?"var(--teal)":s==="warning"?"var(--amber)":s==="error"?"var(--red)":"var(--faint)";
+  $("#timeline").innerHTML=Object.entries(byDay).map(([day,list])=>
+    `<div class="tl-day">${day}</div>`+list.map(a=>`<div class="act">
+      <div class="ag"><span class="dot" style="background:${dotc(a.status)}"></span> <b>${a.agent}</b>${a.action}</div>
+      <div class="body">${a.summary||""} ${a.artifact_url?`<br><small><a href="${a.artifact_url}" target="_blank">${a.artifact_url}</a></small>`:""}</div>
+    </div>`).join("")).join("")||"<div class='loading'>no agent activity yet</div>";
+}
+
+(async function(){
+  try{const o=await j("/api/overview");}catch(e){}
+  fetch("/api/overview").then(()=>{});
+  $("#ghlink").href="https://github.com/"+REPO;
+  $("#foot").innerHTML=`OSS Radar · LightGBM · MLflow · BigQuery · Cloud Run · Cloud Scheduler · Claude agents<br>
+    open source at <a href="https://github.com/${REPO}" target="_blank">github.com/${REPO}</a>`;
+  loadOverview();
+})();
+</script>
+</body>
+</html>

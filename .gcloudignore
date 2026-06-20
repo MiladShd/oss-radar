@@ -1,0 +1,22 @@
+# Keep the Cloud Build upload small & clean.
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.duckdb
+*.duckdb.wal
+models_local/
+mlruns/
+reports/*.md
+data/
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+.gcp_project
+.gcp_bootstrap.log
+.gcp_apis.log
+.venv_setup.log
+.DS_Store
+.claude/
+docs/

@@ -1,0 +1,187 @@
+"""Feature construction.
+
+Growth model (supervised regression): features are pure download-dynamics computed from
+the daily series so they are identical in distribution between historical training rows and
+the latest scoring row. The label is next-7-day relative growth of weekly downloads. The
+180-day backfill yields thousands of (package, as-of-date) training rows on the very first run.
+
+Risk model (cross-sectional): maintenance / popularity / security features from the latest
+snapshot, with a transparent ``at_risk_label`` (documented in docs/METHODOLOGY.md).
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import date, timedelta
+
+import numpy as np
+import pandas as pd
+
+DOWNLOAD_FEATURES = [
+    "log_d7",
+    "log_d28",
+    "velocity",
+    "mom_7v7",
+    "mom_7v28",
+    "trend_slope_28",
+    "volatility_28",
+]
+
+RISK_FEATURES = [
+    "log_stars",
+    "log_forks",
+    "log_open_issues",
+    "log_dependent_repos",
+    "log_dependent_packages",
+    "bus_factor",
+    "release_cadence_days",
+    "dependency_count",
+    "scorecard_overall",
+    "commit_count_4w",
+    "prs_merged_7d",
+    "issues_opened_7d",
+    "rank_average",
+]
+
+
+def _window_sum(series: dict[date, int], end: date, days: int, offset: int = 0) -> int:
+    last = end - timedelta(days=offset)
+    first = last - timedelta(days=days - 1)
+    return sum(v for d, v in series.items() if first <= d <= last)
+
+
+def _daily_window(series: dict[date, int], end: date, days: int) -> list[int]:
+    return [series.get(end - timedelta(days=k), 0) for k in range(days - 1, -1, -1)]
+
+
+def _download_features(series: dict[date, int], asof: date) -> dict | None:
+    d7 = _window_sum(series, asof, 7)
+    if d7 <= 0:
+        return None
+    d28 = _window_sum(series, asof, 28)
+    prev7 = _window_sum(series, asof, 7, offset=7)
+    daily28 = np.array(_daily_window(series, asof, 28), dtype=float)
+    mean28 = daily28.mean() if daily28.size else 0.0
+    # normalized least-squares slope over the 28-day daily series
+    if mean28 > 0:
+        x = np.arange(daily28.size)
+        slope = np.polyfit(x, daily28, 1)[0] / mean28
+        volatility = daily28.std() / mean28
+    else:
+        slope = volatility = 0.0
+    return {
+        "log_d7": math.log1p(d7),
+        "log_d28": math.log1p(d28),
+        "velocity": d7 / 7.0,
+        "mom_7v7": d7 / max(prev7, 1),
+        "mom_7v28": d7 / max(d28 / 4.0, 1),
+        "trend_slope_28": float(slope),
+        "volatility_28": float(volatility),
+    }
+
+
+def _series_by_package(history: pd.DataFrame) -> dict[str, dict[date, int]]:
+    out: dict[str, dict[date, int]] = {}
+    for name, grp in history.groupby("name"):
+        s: dict[date, int] = {}
+        for d, dl in zip(grp["date"], grp["downloads"], strict=False):
+            dd = d if isinstance(d, date) else pd.to_datetime(d).date()
+            s[dd] = int(dl)
+        out[name] = s
+    return out
+
+
+def build_growth_training(
+    history: pd.DataFrame, horizon: int = 7, stride: int = 3, min_history: int = 28
+) -> pd.DataFrame:
+    """Slide an as-of window across each package's series to make supervised rows."""
+    rows = []
+    for name, series in _series_by_package(history).items():
+        if not series:
+            continue
+        days = sorted(series)
+        start, end = days[0], days[-1]
+        cursor = start + timedelta(days=min_history)
+        last_label_day = end - timedelta(days=horizon)
+        while cursor <= last_label_day:
+            feats = _download_features(series, cursor)
+            if feats:
+                d7 = _window_sum(series, cursor, 7)
+                future7 = _window_sum(series, cursor + timedelta(days=horizon), 7)
+                feats["name"] = name
+                feats["feature_date"] = cursor
+                feats["growth_target_7d"] = future7 / max(d7, 1) - 1.0
+                rows.append(feats)
+            cursor += timedelta(days=stride)
+    return pd.DataFrame(rows)
+
+
+def build_growth_scoring(history: pd.DataFrame) -> pd.DataFrame:
+    """One row per package: download-dynamics features as of the latest available date."""
+    rows = []
+    for name, series in _series_by_package(history).items():
+        if not series:
+            continue
+        asof = max(series)
+        feats = _download_features(series, asof)
+        if feats:
+            feats["name"] = name
+            feats["feature_date"] = asof
+            rows.append(feats)
+    return pd.DataFrame(rows)
+
+
+def _num(v):
+    if v is None or (isinstance(v, float) and v != v):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _at_risk_label(r: pd.Series) -> int:
+    sev = r.get("max_severity")
+    sev = sev if isinstance(sev, str) else ""
+    recent_high_vuln = (_num(r.get("vuln_new_28d")) or 0) > 0 and sev in ("HIGH", "CRITICAL")
+    abandoned = (r.get("archived") is True) or (isinstance(r.get("status"), str) and bool(r.get("status")))
+    stale = (_num(r.get("days_since_last_release")) or 0) > 365
+    bf = _num(r.get("bus_factor"))
+    dep = _num(r.get("dependent_repos_count")) or 0
+    key_person = bf is not None and bf < 0.1 and dep > 1000
+    return int(bool(recent_high_vuln or abandoned or stale or key_person))
+
+
+def build_risk_frame(snapshots_latest: pd.DataFrame) -> pd.DataFrame:
+    """Cross-sectional risk features + transparent at_risk label from the latest snapshots."""
+    df = snapshots_latest.copy()
+
+    def series(col):  # always a Series aligned to df, even if the column is absent
+        if col in df.columns:
+            return pd.to_numeric(df[col], errors="coerce")
+        return pd.Series([np.nan] * len(df), index=df.index)
+
+    def logp(col):
+        return np.log1p(series(col).fillna(0).clip(lower=0))
+
+    out = pd.DataFrame(
+        {
+            "name": df["name"],
+            "category": df["category"],
+            "log_stars": logp("stars"),
+            "log_forks": logp("forks"),
+            "log_open_issues": logp("open_issues"),
+            "log_dependent_repos": logp("dependent_repos_count"),
+            "log_dependent_packages": logp("dependent_packages_count"),
+            "bus_factor": series("bus_factor"),
+            "release_cadence_days": series("release_cadence_days"),
+            "dependency_count": series("dependency_count"),
+            "scorecard_overall": series("scorecard_overall"),
+            "commit_count_4w": series("commit_count_4w"),
+            "prs_merged_7d": series("prs_merged_7d"),
+            "issues_opened_7d": series("issues_opened_7d"),
+            "rank_average": series("rank_average"),
+        }
+    )
+    out["at_risk_label"] = df.apply(_at_risk_label, axis=1).values
+    return out
