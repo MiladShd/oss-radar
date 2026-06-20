@@ -25,8 +25,10 @@ def _dataset(seed: int, signal_on: str | None, n: int = 800) -> pd.DataFrame:
 def test_same_data_same_model():
     df = _dataset(1, "mom_7v7")
     probe = _dataset(99, None)
-    p1 = GrowthModel(seed=7); p1.fit(df)
-    p2 = GrowthModel(seed=7); p2.fit(df)
+    p1 = GrowthModel(seed=7)
+    p1.fit(df)
+    p2 = GrowthModel(seed=7)
+    p2.fit(df)
     a = p1.predict(probe)
     b = p2.predict(probe)
     assert np.allclose(a, b), "same data + seed must reproduce the same model"
@@ -35,8 +37,10 @@ def test_same_data_same_model():
 def test_new_data_changes_the_model():
     probe = _dataset(99, None)
     # "yesterday": momentum drives growth.  "today": volatility drives growth instead.
-    m_yesterday = GrowthModel(seed=7); m_yesterday.fit(_dataset(1, "mom_7v7"))
-    m_today = GrowthModel(seed=7); m_today.fit(_dataset(2, "volatility_28"))
+    m_yesterday = GrowthModel(seed=7)
+    m_yesterday.fit(_dataset(1, "mom_7v7"))
+    m_today = GrowthModel(seed=7)
+    m_today.fit(_dataset(2, "volatility_28"))
 
     preds_changed = float(np.mean(np.abs(m_yesterday.predict(probe) - m_today.predict(probe))))
     assert preds_changed > 0.05, "retraining on different data must change predictions"
@@ -49,6 +53,8 @@ def test_new_data_changes_the_model():
 def test_metric_reflects_real_signal():
     # a model trained where a feature genuinely predicts the target scores far better
     # than one trained on pure noise — i.e. the metric tracks real signal, not luck.
-    signal = GrowthModel(seed=7); m1 = signal.fit(_dataset(1, "mom_7v7"))
-    noise = GrowthModel(seed=7); m2 = noise.fit(_dataset(1, None))
+    signal = GrowthModel(seed=7)
+    m1 = signal.fit(_dataset(1, "mom_7v7"))
+    noise = GrowthModel(seed=7)
+    m2 = noise.fit(_dataset(1, None))
     assert m1["spearman"] > m2["spearman"] + 0.2
