@@ -11,9 +11,11 @@ import structlog
 from oss_radar.agents.crew import run_crew
 from oss_radar.agents.llm import Claude
 from oss_radar.config import Settings, get_settings
+from oss_radar.config.active_features import active_download_features, active_risk_features
 from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
 from oss_radar.features.forward import choose_risk_training
 from oss_radar.ingest.collector import collect
+from oss_radar.ingest.healing import heal
 from oss_radar.models.drift import compute_prediction_drift
 from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
@@ -46,10 +48,10 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     wh = get_warehouse(settings)
     wh.init_schema()
 
-    # 1) Ingest
+    # 1) Ingest (+ self-healing of transient failures)
     t = time.time()
-    ing = collect(run_id, settings)
-    snapshots, history = ing["snapshots"], ing["history"]
+    healed = heal(collect(run_id, settings), settings, wh, run_id)
+    snapshots, history, heal_stats = healed["snapshots"], healed["history"], healed["stats"]
     wh.truncate("download_history")
     wh.insert_rows("snapshots", snapshots)
     wh.insert_rows("download_history", history)
@@ -60,8 +62,10 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     snap_df = pd.DataFrame(snapshots)
     hist_df = pd.DataFrame(history)
 
-    # 2) Features
+    # 2) Features (active feature sets are PR-controlled; see config/active_features.json)
     t = time.time()
+    active_download = active_download_features()
+    active_risk = active_risk_features()
     train_df = build_growth_training(hist_df)
     score_df = build_growth_scoring(hist_df)
     risk_df = build_risk_frame(snap_df)
@@ -73,10 +77,10 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
 
     # 3) Train
     t = time.time()
-    growth = GrowthModel(seed=settings.random_seed)
+    growth = GrowthModel(features=active_download, seed=settings.random_seed)
     growth_metrics = growth.fit(train_df) if len(train_df) >= settings.min_train_rows else {
         "spearman": float("nan"), "note": "insufficient training rows", "n_train": len(train_df)}
-    risk = RiskModel(seed=settings.random_seed)
+    risk = RiskModel(features=active_risk, seed=settings.random_seed)
     risk_metrics = risk.fit(risk_train)
     stages["train"] = round(time.time() - t, 1)
 
@@ -122,7 +126,8 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     # 6) Agents
     t = time.time()
     crew = run_crew(run_id, settings, Claude(settings), snap_df, predictions, model_metrics,
-                    drift=drift, dry_run=dry_run)
+                    drift=drift, heal_stats=heal_stats, train_df=train_df,
+                    active_download=active_download, dry_run=dry_run)
     stages["agents"] = round(time.time() - t, 1)
 
     # 7) Persist everything

@@ -1,6 +1,8 @@
 """Feature engineering for the growth (time-series) and risk (cross-sectional) models."""
 
 from oss_radar.features.engineering import (
+    ALL_DOWNLOAD_FEATURES,
+    CANDIDATE_DOWNLOAD_FEATURES,
     DOWNLOAD_FEATURES,
     RISK_FEATURES,
     build_growth_scoring,
@@ -9,6 +11,8 @@ from oss_radar.features.engineering import (
 )
 
 __all__ = [
+    "ALL_DOWNLOAD_FEATURES",
+    "CANDIDATE_DOWNLOAD_FEATURES",
     "DOWNLOAD_FEATURES",
     "RISK_FEATURES",
     "build_growth_scoring",

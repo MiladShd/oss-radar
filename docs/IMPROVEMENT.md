@@ -84,6 +84,53 @@ forces a from-scratch retrain on the next run, and (in the cloud) **opens a GitH
 bands follow the standard rule of thumb — `< 0.10` stable, `0.10–0.25` moderate, `> 0.25` significant. The drift
 metrics are themselves persisted to `model_runs` (as a `monitor` series) so they can be charted and trended.
 
+## 5. Self-healing — recovering from failures, not shipping holes
+
+Transient failures are normal (a source rate-limits, a request times out). Instead of leaving a
+gap, the **Healer** agent (`ingest/healing.py`) runs after ingest:
+
+1. it identifies packages whose core download signal failed,
+2. **retries** just those, gently and single-threaded (most transient failures clear on retry), and
+3. for anything still missing, **carries forward** that package's last good snapshot so the
+   dashboard and risk features don't regress.
+
+Every healing action is bounded (one retry pass, last-known fallback) and logged:
+
+```
+Healer · self_heal_ingest · 3 package(s) failed ingest; retried and recovered 2,
+  carried forward 1 from last good snapshot.
+```
+
+So a bad afternoon at one data source degrades gracefully and self-corrects, rather than
+poisoning the day's run.
+
+## 6. Self-proposing features — the improvement agent opens its own PRs
+
+This closes the loop from *"drift detected"* to *"model improved."* The pipeline computes a
+**catalog of candidate features** every run (extra download-dynamics signals) but only the
+**active** set — `config/active_features.json` — actually trains the model. The
+**ImprovementScientist** agent (`agents/improver.py`):
+
+1. runs an **offline experiment** (`models/experiment.py`): trains the growth model with the
+   active set vs. active + each candidate on the *same* held-out split, and measures the
+   Spearman lift,
+2. reports the full experiment table, and
+3. if a candidate beats the lift bar (`feature_lift_margin`), **opens a PR** that enables it in
+   `active_features.json`, with the measured results in the PR body.
+
+```
+ImprovementScientist · feature_experiment · Tested 4 candidate features against held-out
+  Spearman: mom_28v28 Δ+0.018, recent_share Δ+0.004, trend_slope_7 Δ-0.002, ...
+ImprovementScientist · open_pull_request · Proposed enabling 'mom_28v28' (Δspearman +0.018).
+  → https://github.com/MiladShd/oss-radar/pull/N
+```
+
+**Why this is safe self-improvement:** the agent only *proposes*. The candidate features are
+already implemented and tested; the PR is a one-line config toggle; CI and the PR-preview bot
+re-run the pipeline on the branch to confirm the lift; and the change reaches the running model
+only when the PR is merged (which you can make auto-merge-on-green if you want zero-touch). The
+system measures and recommends its own improvements without ever silently mutating itself.
+
 ## What "fully automatic" means here
 
 No step requires a human:
@@ -92,10 +139,12 @@ No step requires a human:
 |---|---|---|
 | Trigger the daily run | Cloud Scheduler | `infra/terraform` |
 | Ingest + feature-build | pipeline | Cloud Run Job |
+| **Heal transient ingest failures** | **Healer agent** | **retry + carry-forward** |
 | Decide heuristic vs realized labels | `choose_risk_training` | automatic on history span |
 | Retrain + evaluate | models | Cloud Run Job |
 | Promote only if better | registry gate | recorded in BigQuery |
 | Detect drift + escalate | DataScientist agent | issue + forced retrain |
+| **Experiment + propose a new feature** | **ImprovementScientist agent** | **opens a PR with measured lift** |
 | Write the brief + open the PR | RiskAnalyst + MLOps agents | GitHub |
 
 The only optional human touch is **merging the daily PR** (or reviewing a drift issue) — and even that can be made a
@@ -103,14 +152,13 @@ GitHub Actions auto-merge if you want zero-touch.
 
 ## Roadmap — how to push the self-improvement further
 
-These are deliberately small, well-scoped extensions that build on the machinery already here:
+✅ **Done — agent-proposed features.** The ImprovementScientist agent (§6) experiments over a candidate catalog and
+opens a PR when one measurably lifts the model. Remaining extensions that build on the machinery already here:
 
-1. **Feature search by the agent.** On sustained drift, have the DataScientist agent *propose* a new feature
-   (e.g. `maintainer_response_lag_14d`), open a PR adding it, and let the PR-preview bot report whether it lifts the
-   held-out metric — closing the loop from "drift detected" to "model improved".
-2. **Hyperparameter tuning** (Optuna) gated behind the same champion/challenger rule, so tuning can only ever help.
-3. **Rolling backtests** as the snapshot history deepens — evaluate momentum calls against realized 7-day outcomes
+1. **Hyperparameter tuning** (Optuna) gated behind the same champion/challenger rule, so tuning can only ever help.
+2. **Rolling backtests** as the snapshot history deepens — evaluate momentum calls against realized 7-day outcomes
    and surface a precision-at-K curve on the dashboard.
+3. **Risk-feature candidates** — extend the candidate catalog and experiment harness to the risk model too.
 4. **Auto-merge** the daily report PR and auto-close stale drift issues via GitHub Actions for true zero-touch.
 5. **Per-category models** once each category has enough history to train independently.
 

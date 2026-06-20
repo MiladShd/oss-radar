@@ -15,6 +15,7 @@ import structlog
 
 from oss_radar.agents import github_ops
 from oss_radar.agents.context import AgentContext
+from oss_radar.agents.improver import run_improver
 
 log = structlog.get_logger(__name__)
 
@@ -63,6 +64,20 @@ def _data_engineer(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
         if url:
             ctx.record("DataEngineer", "open_issue", "ok", f"Opened incident for {down}", url)
     return {"source_ok_rates": rates}
+
+
+# --- Healer: report on self-healing actions taken during ingest ---
+def _healer(ctx: AgentContext, heal_stats: dict | None) -> None:
+    if not heal_stats or not heal_stats.get("failed"):
+        ctx.record("Healer", "self_heal_ingest", "ok", "All sources healthy — no healing needed.")
+        return
+    s = heal_stats
+    status = "ok" if s.get("recovered", 0) or s.get("carried_forward", 0) else "warning"
+    ctx.record(
+        "Healer", "self_heal_ingest", status,
+        f"{s['failed']} package(s) failed ingest; retried and recovered {s.get('recovered', 0)}, "
+        f"carried forward {s.get('carried_forward', 0)} from last good snapshot.",
+    )
 
 
 # --- Data Quality: nulls / dupes / coverage ---
@@ -206,14 +221,17 @@ def _mlops(ctx: AgentContext, date_str: str, report_md: str) -> str | None:
 
 
 def run_crew(run_id: str, settings, llm, snapshots: pd.DataFrame, predictions: pd.DataFrame,
-             model_metrics: dict, drift: dict | None = None, dry_run: bool = False) -> dict:
+             model_metrics: dict, drift: dict | None = None, heal_stats: dict | None = None,
+             train_df=None, active_download: list[str] | None = None, dry_run: bool = False) -> dict:
     ctx = AgentContext(run_id=run_id, settings=settings, llm=llm, dry_run=dry_run)
     date_str = datetime.now(UTC).date().isoformat()
 
+    _healer(ctx, heal_stats)
     engineering = _data_engineer(ctx, snapshots)
     quality = _data_quality(ctx, snapshots)
     _data_scientist(ctx, model_metrics)
     _model_monitor(ctx, drift)
+    run_improver(ctx, train_df, active_download or [])
     report_md = _risk_analyst(ctx, date_str, predictions, model_metrics, quality)
     pr_url = _mlops(ctx, date_str, report_md)
 

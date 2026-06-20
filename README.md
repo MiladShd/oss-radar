@@ -40,7 +40,9 @@ locally — and it's **deployed live on GCP**, retraining itself on a daily sche
 |---|---|
 | 📈 **Momentum model** | LightGBM regressor forecasting next-7-day download growth from time-series dynamics, with a time-aware backtest and SHAP explanations. |
 | ⚠️ **Risk model** | LightGBM classifier + a transparent weighted composite (vulnerabilities, maintenance staleness, bus-factor, security scorecard, abandonment, issue backlog). |
-| 🤖 **Agent crew** | Five agents *manage* the pipeline (they don't make the predictions): DataEngineer, DataQuality, DataScientist, RiskAnalyst, MLOps. |
+| 🤖 **Agent crew** | Seven agents *manage* the pipeline (they don't make the predictions): Healer, DataEngineer, DataQuality, DataScientist, ImprovementScientist, RiskAnalyst, MLOps. |
+| 🩹 **Self-healing** | The Healer retries transient ingest failures and carries forward last-known signals — a bad day at one source self-corrects instead of leaving holes. |
+| 🧬 **Self-improving** | The ImprovementScientist experiments with candidate features each run and **opens a PR when one measurably lifts the model** (safe: it only proposes; CI + review gate every change). |
 | 🏆 **Champion/challenger** | Every run retrains and only promotes a model if it beats the previous champion — the model-improvement history is charted on the dashboard. |
 | 📊 **Live dashboard** | Movers, a searchable leaderboard, per-package signal breakdown with download sparklines, model-metric history, and a "what the agents did today" timeline. |
 | 🔀 **PR workflow** | The MLOps agent opens a daily report PR; contributors can "run a PR" and the CI bot posts the resulting momentum/risk movers back as a comment. |
@@ -129,12 +131,13 @@ the whole stack. See [docs/DEPLOY.md](docs/DEPLOY.md) for details and teardown.
 
 ## How it improves itself (automatically)
 
-Four mechanisms compound every day with no human in the loop: history accumulates, models retrain, **only genuine
+Several mechanisms compound every day with no human in the loop: history accumulates, models retrain, **only genuine
 improvements are promoted** (strict champion/challenger), the risk model **graduates from heuristic labels to
-realized forward outcomes** as snapshots accumulate, and a **drift monitor** (PSI + label churn) catches when the
-ecosystem shifts — escalating to a GitHub issue and a forced retrain. The DataScientist agent records the rationale
-every run (`promoted: spearman=0.214 > prev best 0.190 · labels: forward-outcome`). Full write-up:
-**[docs/IMPROVEMENT.md](docs/IMPROVEMENT.md)**.
+realized forward outcomes** as snapshots accumulate, a **drift monitor** (PSI + label churn) catches when the
+ecosystem shifts (escalating to a GitHub issue + forced retrain), the **Healer** recovers from transient ingest
+failures, and the **ImprovementScientist** experiments with candidate features and **opens a PR when one measurably
+lifts the model** — closing the loop from "drift detected" to "model improved," safely (it only proposes; CI and
+review gate every change). Full write-up: **[docs/IMPROVEMENT.md](docs/IMPROVEMENT.md)**.
 
 ## Methodology & honesty
 

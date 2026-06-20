@@ -71,3 +71,43 @@ def open_daily_pr(token: str, repo_full: str, branch: str, report_path: str,
     except Exception as exc:  # noqa: BLE001
         log.warning("github.pr_failed", error=str(exc))
         return None
+
+
+def open_file_pr(token: str, repo_full: str, branch: str, path: str, content: str,
+                 title: str, body: str, labels: list[str] | None = None) -> str | None:
+    """Open (or reuse) a PR that creates/updates a single file on a branch.
+
+    Used by the self-improvement agent to propose enabling a feature. Idempotent on the
+    branch name, so the same proposal never opens duplicate PRs.
+    """
+    repo = _repo(token, repo_full)
+    if not repo:
+        return None
+    try:
+        base = repo.default_branch
+        # reuse an existing open PR for this proposal if present
+        existing = list(repo.get_pulls(state="open", head=f"{repo.owner.login}:{branch}"))
+        if existing:
+            return existing[0].html_url
+
+        base_sha = repo.get_branch(base).commit.sha
+        try:
+            repo.get_branch(branch)
+        except Exception:
+            repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
+
+        try:
+            cur = repo.get_contents(path, ref=branch)
+            repo.update_file(path, f"feat: {title}", content, cur.sha, branch=branch)
+        except Exception:
+            repo.create_file(path, f"feat: {title}", content, branch=branch)
+
+        pr = repo.create_pull(title=title, body=body, head=branch, base=base)
+        try:
+            pr.add_to_labels(*(labels or ["oss-radar", "automated"]))
+        except Exception:  # noqa: BLE001
+            pass
+        return pr.html_url
+    except Exception as exc:  # noqa: BLE001
+        log.warning("github.file_pr_failed", error=str(exc))
+        return None

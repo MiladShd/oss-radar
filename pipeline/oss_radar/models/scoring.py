@@ -23,6 +23,10 @@ _GROWTH_REASON = {
     "log_d7": ("strong weekly download base", "small weekly download base"),
     "log_d28": ("strong monthly download base", "small monthly download base"),
     "volatility_28": ("volatile download pattern", "steady download pattern"),
+    "mom_28v28": ("monthly downloads rising vs last month", "monthly downloads falling vs last month"),
+    "recent_share": ("downloads concentrated in the last week", "downloads spread over the month"),
+    "trend_slope_7": ("7-day download trend rising", "7-day download trend falling"),
+    "dow_volatility_7": ("spiky week of downloads", "smooth week of downloads"),
 }
 
 

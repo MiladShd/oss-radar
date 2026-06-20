@@ -1,0 +1,26 @@
+{
+  "download": [
+    "log_d7",
+    "log_d28",
+    "velocity",
+    "mom_7v7",
+    "mom_7v28",
+    "trend_slope_28",
+    "volatility_28"
+  ],
+  "risk": [
+    "log_stars",
+    "log_forks",
+    "log_open_issues",
+    "log_dependent_repos",
+    "log_dependent_packages",
+    "bus_factor",
+    "release_cadence_days",
+    "dependency_count",
+    "scorecard_overall",
+    "commit_count_4w",
+    "prs_merged_7d",
+    "issues_opened_7d",
+    "rank_average"
+  ]
+}

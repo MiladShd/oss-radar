@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # --- Self-improvement ---
     risk_horizon_days: int = 14  # snapshot span before risk switches to realized-outcome labels
     forward_min_rows: int = 25   # min realized-outcome rows before the model trusts them
+    feature_lift_margin: float = 0.01  # min held-out Spearman lift to propose a new feature
 
     @property
     def use_llm(self) -> bool:
