@@ -82,18 +82,44 @@ def _data_quality(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
     return {"coverage": coverage, "duplicates": dupes, "null_rates": null_rates}
 
 
-# --- Data Scientist: training + champion/challenger ---
+# --- Data Scientist: training + champion/challenger + drift monitoring ---
 def _data_scientist(ctx: AgentContext, model_metrics: dict) -> None:
     for name, m in model_metrics.items():
-        champ = m.get("is_champion")
         primary = "spearman" if name == "growth" else "auc"
         val = m.get(primary)
-        verdict = "promoted to champion" if champ else "kept as challenger"
         val_str = f"{primary}={val:.3f}" if isinstance(val, (int, float)) and val == val else f"{primary}=n/a"
+        note = m.get("promotion_note") or ("promoted to champion" if m.get("is_champion") else "kept as challenger")
+        extra = f" · labels: {m['label_mode']}" if name == "risk" and m.get("label_mode") else ""
+        n_train = m.get("n_train") or m.get("n_samples")
         ctx.record(
             "DataScientist", f"retrain_{name}_model", "ok",
-            f"{name.title()} model retrained ({val_str}, n_train={m.get('n_train')}); {verdict}.",
+            f"{name.title()} model retrained ({val_str}, n_train={n_train}); {note}{extra}.",
         )
+
+
+def _model_monitor(ctx: AgentContext, drift: dict | None) -> None:
+    if not drift or not drift.get("available"):
+        ctx.record("DataScientist", "monitor_drift", "ok",
+                   "No prior run to compare — drift baseline established for next run.")
+        return
+    sev = drift.get("severity", "low")
+    summary = (
+        f"Prediction drift vs prior run: {sev} "
+        f"(momentum PSI {drift.get('momentum_score_psi')}, risk PSI {drift.get('risk_score_psi')}, "
+        f"label churn {int(drift.get('label_churn', 0) * 100)}%)."
+    )
+    ctx.record("DataScientist", "monitor_drift", "warning" if sev == "high" else "ok", summary)
+    if sev == "high":
+        ctx.record("DataScientist", "recommend_action", "warning",
+                   "Significant drift — flagged for feature review; next run will retrain from scratch.")
+        if not ctx.dry_run and ctx.settings.github_token:
+            url = github_ops.open_issue(
+                ctx.settings.github_token, ctx.settings.github_repo,
+                title=f"[oss-radar] Prediction drift detected ({sev})",
+                body=summary + "\n\nRecommend reviewing input features and confirming the retrain.",
+                labels=["oss-radar", "model-drift"])
+            if url:
+                ctx.record("DataScientist", "open_issue", "ok", "Opened drift investigation issue.", url)
 
 
 # --- Risk Analyst: the daily human-readable report ---
@@ -180,13 +206,14 @@ def _mlops(ctx: AgentContext, date_str: str, report_md: str) -> str | None:
 
 
 def run_crew(run_id: str, settings, llm, snapshots: pd.DataFrame, predictions: pd.DataFrame,
-             model_metrics: dict, dry_run: bool = False) -> dict:
+             model_metrics: dict, drift: dict | None = None, dry_run: bool = False) -> dict:
     ctx = AgentContext(run_id=run_id, settings=settings, llm=llm, dry_run=dry_run)
     date_str = datetime.now(UTC).date().isoformat()
 
     engineering = _data_engineer(ctx, snapshots)
     quality = _data_quality(ctx, snapshots)
     _data_scientist(ctx, model_metrics)
+    _model_monitor(ctx, drift)
     report_md = _risk_analyst(ctx, date_str, predictions, model_metrics, quality)
     pr_url = _mlops(ctx, date_str, report_md)
 

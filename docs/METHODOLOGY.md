@@ -71,9 +71,12 @@ from maintenance / popularity / security features. Reported with **cross-validat
 ## Champion / challenger
 
 Each run trains fresh models and compares the primary metric (growth → Spearman, risk → AUC) to the best previous
-**champion** recorded in the warehouse. A new model is promoted only if it beats the champion (or there is none).
-Either way every metric is persisted, so the dashboard's "model improvement over time" chart is the honest audit
-trail — including runs that were *not* promoted.
+**champion** recorded in the warehouse. A new model is promoted only if it **strictly beats** the champion (or there
+is none). Either way every metric and the promotion rationale are persisted, so the dashboard's "model improvement
+over time" chart is the honest audit trail — including runs that were *not* promoted.
+
+The full self-improvement design — forward-outcome relabeling, drift detection, and the automatic daily loop — is in
+[IMPROVEMENT.md](IMPROVEMENT.md).
 
 ## Why agents, not an agentic model
 

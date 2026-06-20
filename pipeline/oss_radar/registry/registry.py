@@ -20,6 +20,8 @@ log = structlog.get_logger(__name__)
 
 # primary metric per model and whether higher is better
 PRIMARY_METRIC = {"growth": ("spearman", True), "risk": ("auc", True)}
+# A new model must beat the best-ever champion by at least this margin to be promoted.
+PROMOTION_MARGIN = {"growth": 0.0, "risk": 0.0}
 
 
 class ModelRegistry:
@@ -68,13 +70,26 @@ class ModelRegistry:
         gcs_uri = self._upload_gcs(local_path, model_name, version) if self.settings.is_cloud else str(local_path)
 
         metric_name, higher_better = PRIMARY_METRIC[model_name]
+        margin = PROMOTION_MARGIN.get(model_name, 0.0)
         new_val = metrics.get(metric_name)
         prev = self._prev_best(wh, model_name, metric_name)
-        is_champion = True
+
+        # Promote only on genuine improvement over the best-ever champion (strict, beyond margin).
         if new_val is None or new_val != new_val:  # NaN -> not a valid champion candidate
             is_champion = False
-        elif prev is not None:
-            is_champion = new_val >= prev if higher_better else new_val <= prev
+            note = f"not promoted: {metric_name} unavailable"
+        elif prev is None:
+            is_champion = True
+            note = f"first champion: {metric_name}={new_val:.3f}"
+        else:
+            is_champion = (new_val > prev + margin) if higher_better else (new_val < prev - margin)
+            cmp = ">" if higher_better else "<"
+            note = (
+                f"promoted: {metric_name}={new_val:.3f} {cmp} prev best {prev:.3f}"
+                if is_champion
+                else f"held challenger: {metric_name}={new_val:.3f} did not beat best {prev:.3f}"
+            )
+        metrics["promotion_note"] = note
 
         self._mlflow_log(model_name, version, params, metrics, is_champion)
 
@@ -85,7 +100,7 @@ class ModelRegistry:
                 "metric_name": mname, "metric_value": float(mval) if isinstance(mval, (int, float)) else None,
                 "n_train": metrics.get("n_train"), "n_test": metrics.get("n_test"),
                 "params": params, "is_champion": is_champion, "gcs_uri": gcs_uri or "",
-                "notes": metrics.get("note", ""),
+                "notes": note,
             }
             for mname, mval in metrics.items()
             if isinstance(mval, (int, float))

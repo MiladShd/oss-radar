@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     min_train_rows: int = 200
     random_seed: int = 42
 
+    # --- Self-improvement ---
+    risk_horizon_days: int = 14  # snapshot span before risk switches to realized-outcome labels
+    forward_min_rows: int = 25   # min realized-outcome rows before the model trusts them
+
     @property
     def use_llm(self) -> bool:
         # real Anthropic keys start with sk-ant-; a sentinel (e.g. "DISABLED") => template mode

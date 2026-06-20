@@ -127,6 +127,15 @@ the whole stack. See [docs/DEPLOY.md](docs/DEPLOY.md) for details and teardown.
 5. **Agents** validate freshness/quality, summarize the day, and open a report PR.
 6. Everything is written to BigQuery; the dashboard reads it live.
 
+## How it improves itself (automatically)
+
+Four mechanisms compound every day with no human in the loop: history accumulates, models retrain, **only genuine
+improvements are promoted** (strict champion/challenger), the risk model **graduates from heuristic labels to
+realized forward outcomes** as snapshots accumulate, and a **drift monitor** (PSI + label churn) catches when the
+ecosystem shifts — escalating to a GitHub issue and a forced retrain. The DataScientist agent records the rationale
+every run (`promoted: spearman=0.214 > prev best 0.190 · labels: forward-outcome`). Full write-up:
+**[docs/IMPROVEMENT.md](docs/IMPROVEMENT.md)**.
+
 ## Methodology & honesty
 
 Forecasting 7-day download growth is genuinely hard, and the watchlist is small — so the models are deliberately

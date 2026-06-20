@@ -12,7 +12,9 @@ from oss_radar.agents.crew import run_crew
 from oss_radar.agents.llm import Claude
 from oss_radar.config import Settings, get_settings
 from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
+from oss_radar.features.forward import choose_risk_training
 from oss_radar.ingest.collector import collect
+from oss_radar.models.drift import compute_prediction_drift
 from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
 from oss_radar.models.scoring import build_predictions
@@ -63,6 +65,10 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     train_df = build_growth_training(hist_df)
     score_df = build_growth_scoring(hist_df)
     risk_df = build_risk_frame(snap_df)
+    # Risk training labels: realized-outcome once daily history spans the horizon, else heuristic.
+    snap_history = wh.query_df("SELECT * FROM snapshots")
+    risk_train, risk_label_mode = choose_risk_training(
+        risk_df, snap_history, horizon_days=settings.risk_horizon_days, min_rows=settings.forward_min_rows)
     stages["features"] = round(time.time() - t, 1)
 
     # 3) Train
@@ -71,7 +77,7 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     growth_metrics = growth.fit(train_df) if len(train_df) >= settings.min_train_rows else {
         "spearman": float("nan"), "note": "insufficient training rows", "n_train": len(train_df)}
     risk = RiskModel(seed=settings.random_seed)
-    risk_metrics = risk.fit(risk_df)
+    risk_metrics = risk.fit(risk_train)
     stages["train"] = round(time.time() - t, 1)
 
     # 4) Register (champion/challenger)
@@ -88,6 +94,7 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
             champ, rows = False, []
         model_runs_rows.extend(rows)
         model_metrics[name] = {**metrics, "is_champion": champ}
+    model_metrics["risk"]["label_mode"] = risk_label_mode
 
     # 5) Score
     t = time.time()
@@ -97,9 +104,25 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
         predictions = pd.DataFrame()
     stages["score"] = round(time.time() - t, 1)
 
+    # 5b) Drift vs the previous run (current predictions not yet written => this is the prior run)
+    prev_preds = wh.query_df(
+        "SELECT name, momentum_score, risk_score, momentum_label, risk_level FROM predictions "
+        "WHERE run_id = (SELECT run_id FROM predictions ORDER BY predicted_at DESC LIMIT 1)")
+    drift = compute_prediction_drift(prev_preds if not prev_preds.empty else None, predictions)
+    if drift.get("available"):
+        now_d = datetime.now(UTC)
+        for k in ("momentum_score_psi", "risk_score_psi", "label_churn"):
+            if k in drift:
+                model_runs_rows.append({
+                    "run_id": run_id, "model_name": "monitor", "trained_at": now_d,
+                    "version": f"monitor-{run_id}", "metric_name": k, "metric_value": float(drift[k]),
+                    "n_train": None, "n_test": None, "params": {"severity": drift.get("severity")},
+                    "is_champion": False, "gcs_uri": "", "notes": f"drift {drift.get('severity')}"})
+
     # 6) Agents
     t = time.time()
-    crew = run_crew(run_id, settings, Claude(settings), snap_df, predictions, model_metrics, dry_run=dry_run)
+    crew = run_crew(run_id, settings, Claude(settings), snap_df, predictions, model_metrics,
+                    drift=drift, dry_run=dry_run)
     stages["agents"] = round(time.time() - t, 1)
 
     # 7) Persist everything
