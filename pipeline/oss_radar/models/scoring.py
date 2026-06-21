@@ -1,6 +1,6 @@
 """Turn model outputs into dashboard-ready scores, labels, and human-readable reasons.
 
-* momentum_score: sigmoid of the growth model's predicted 7-day growth (0-100).
+* momentum_score: sigmoid of the growth model's predicted 70-day log-growth (0-100).
 * risk_score: a transparent weighted composite (documented), optionally blended with the
   risk classifier's probability when the model is confident enough to have trained.
 """
@@ -16,6 +16,13 @@ from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
 
 _GROWTH_REASON = {
+    "log_d56": ("strong 8-week download base", "small 8-week download base"),
+    "log_d84": ("strong 12-week download base", "small 12-week download base"),
+    "mom_28v28": ("monthly downloads rising vs prior month", "monthly downloads falling vs prior month"),
+    "mom_56v56": ("8-week downloads rising vs prior 8 weeks", "8-week downloads falling vs prior 8 weeks"),
+    "mom_28v56": ("recent month above the 8-week pace", "recent month below the 8-week pace"),
+    "trend_slope_56": ("8-week download trend rising", "8-week download trend falling"),
+    "trend_slope_84": ("12-week download trend rising", "12-week download trend falling"),
     "mom_7v7": ("weekly downloads accelerating vs prior week", "weekly downloads slowing vs prior week"),
     "mom_7v28": ("this week running above the monthly average", "this week below the monthly average"),
     "trend_slope_28": ("28-day download trend rising", "28-day download trend falling"),
@@ -23,7 +30,6 @@ _GROWTH_REASON = {
     "log_d7": ("strong weekly download base", "small weekly download base"),
     "log_d28": ("strong monthly download base", "small monthly download base"),
     "volatility_28": ("volatile download pattern", "steady download pattern"),
-    "mom_28v28": ("monthly downloads rising vs last month", "monthly downloads falling vs last month"),
     "recent_share": ("downloads concentrated in the last week", "downloads spread over the month"),
     "trend_slope_7": ("7-day download trend rising", "7-day download trend falling"),
     "dow_volatility_7": ("spiky week of downloads", "smooth week of downloads"),

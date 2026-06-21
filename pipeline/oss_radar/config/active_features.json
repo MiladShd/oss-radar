@@ -6,7 +6,14 @@
     "mom_7v7",
     "mom_7v28",
     "trend_slope_28",
-    "volatility_28"
+    "volatility_28",
+    "log_d56",
+    "log_d84",
+    "mom_28v28",
+    "mom_56v56",
+    "mom_28v56",
+    "trend_slope_56",
+    "trend_slope_84"
   ],
   "risk": [
     "log_stars",

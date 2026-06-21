@@ -7,7 +7,7 @@ import pandas as pd
 from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
 
 
-def _synthetic_history(n_days=120, base=1000, growth=1.01):
+def _synthetic_history(n_days=220, base=1000, growth=1.01):
     start = date(2026, 1, 1)
     rows = []
     val = base
