@@ -213,14 +213,14 @@ tr.row:hover td{background:var(--panel2)}
     <div class="kpis" id="btkpis"></div>
     <div class="panel"><h3>Calibration — predicted-growth decile vs realized</h3>
       <div class="sub">Bars = what actually happened · line = what the model predicted. Bars rising left→right means the ranking holds.</div>
-      <canvas id="btCalib" height="150"></canvas></div>
+      <div style="height:240px;position:relative"><canvas id="btCalib"></canvas></div></div>
     <div class="grid2" style="margin-top:18px">
       <div class="panel"><h3>Predicted vs actual</h3>
         <div class="sub">each point = one held-out package-day · dashed line = perfect prediction</div>
-        <canvas id="btScatter" height="150"></canvas></div>
+        <div style="height:240px;position:relative"><canvas id="btScatter"></canvas></div></div>
       <div class="panel"><h3>Risk model ROC</h3>
         <div class="sub" id="btRocSub">true-positive vs false-positive rate</div>
-        <canvas id="btRoc" height="150"></canvas></div>
+        <div style="height:240px;position:relative"><canvas id="btRoc"></canvas></div></div>
     </div>
   </section>
 
@@ -388,7 +388,7 @@ function axes(xt,yt,xmin,xmax,ymin,ymax){
   const x=Object.assign({title:{display:true,text:xt,color:"#7d93a3"}},a());
   const y=Object.assign({title:{display:true,text:yt,color:"#7d93a3"}},a());
   if(xmin!=null){x.min=xmin;x.max=xmax;} if(ymin!=null){y.min=ymin;y.max=ymax;}
-  return {responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x,y}};
+  return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x,y}};
 }
 async function loadBacktest(){
   const d=await j("/api/backtest"); const g=d.growth, r=d.risk;
