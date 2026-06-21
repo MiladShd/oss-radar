@@ -19,7 +19,11 @@ jobs:
           python -m pip install -U pip
           pip install -r pipeline/requirements.txt ruff==0.8.4 pytest==8.3.4
           pip install --no-deps -e pipeline
+          # dashboard runtime + TestClient HTTP dep for the API smoke tests
+          pip install -r dashboard/requirements.txt httpx==0.28.1
       - name: Lint
         run: cd pipeline && ruff check oss_radar
-      - name: Test
+      - name: Test pipeline
         run: pytest pipeline/tests -q
+      - name: Test dashboard
+        run: pytest dashboard/tests -q
