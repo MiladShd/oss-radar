@@ -135,6 +135,19 @@ def package_detail(name: str) -> dict:
     }
 
 
+def backtest() -> dict:
+    df = _wh().query_df("SELECT payload FROM backtest ORDER BY created_at DESC LIMIT 1")
+    if df.empty:
+        return {}
+    payload = df.iloc[0]["payload"]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:  # noqa: BLE001
+            return {}
+    return _clean(payload)
+
+
 def model_history() -> list[dict]:
     df = _wh().query_df(
         "SELECT run_id, model_name, trained_at, version, metric_name, metric_value, "

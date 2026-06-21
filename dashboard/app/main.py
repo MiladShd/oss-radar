@@ -50,6 +50,11 @@ def api_models():
     return JSONResponse(_safe(queries.model_history, []))
 
 
+@app.get("/api/backtest")
+def api_backtest():
+    return JSONResponse(_safe(queries.backtest, {}))
+
+
 @app.get("/api/agents")
 def api_agents():
     return JSONResponse(_safe(lambda: queries.agent_activity(80), []))
