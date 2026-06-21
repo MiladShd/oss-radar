@@ -16,6 +16,7 @@ from oss_radar.features import build_growth_scoring, build_growth_training, buil
 from oss_radar.features.forward import choose_risk_training
 from oss_radar.ingest.collector import collect
 from oss_radar.ingest.healing import heal
+from oss_radar.models.backtest import growth_backtest, risk_backtest
 from oss_radar.models.drift import compute_prediction_drift
 from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
@@ -122,6 +123,15 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
                     "version": f"monitor-{run_id}", "metric_name": k, "metric_value": float(drift[k]),
                     "n_train": None, "n_test": None, "params": {"severity": drift.get("severity")},
                     "is_champion": False, "gcs_uri": "", "notes": f"drift {drift.get('severity')}"})
+
+    # 5c) Backtest (held-out predicted vs actual) for the dashboard "Model accuracy" tab
+    backtest_payload = {
+        "growth": growth_backtest(train_df, active_download) if len(train_df) >= settings.min_train_rows else None,
+        "risk": risk_backtest(risk_train, active_risk),
+        "label_mode": risk_label_mode,
+    }
+    wh.insert_rows("backtest", [{"run_id": run_id, "created_at": datetime.now(UTC),
+                                 "payload": backtest_payload}])
 
     # 6) Agents
     t = time.time()

@@ -157,6 +157,13 @@ PIPELINE_RUNS: list[Column] = [
     ("git_sha", "STRING"),
 ]
 
+# Held-out predicted-vs-actual backtest per run (metrics + calibration + scatter + ROC as JSON).
+BACKTEST: list[Column] = [
+    ("run_id", "STRING"),
+    ("created_at", "TIMESTAMP"),
+    ("payload", "JSON"),
+]
+
 TABLES: dict[str, list[Column]] = {
     "snapshots": SNAPSHOTS,
     "download_history": DOWNLOAD_HISTORY,
@@ -165,6 +172,7 @@ TABLES: dict[str, list[Column]] = {
     "model_runs": MODEL_RUNS,
     "agent_activity": AGENT_ACTIVITY,
     "pipeline_runs": PIPELINE_RUNS,
+    "backtest": BACKTEST,
 }
 
 DUCKDB_TYPES = {
