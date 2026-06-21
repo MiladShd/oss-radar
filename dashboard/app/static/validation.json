@@ -41,12 +41,12 @@
     },
     "predict_zero": {
       "r2": -0.5486180409074701,
-      "spearman": NaN,
+      "spearman": null,
       "mae": 0.27918945330301875
     },
     "predict_train_mean": {
       "r2": -0.03422081888961337,
-      "spearman": NaN,
+      "spearman": null,
       "mae": 0.22753621237400176
     },
     "skill_vs_persistence_r2": 0.9410082292375415

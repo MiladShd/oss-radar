@@ -384,10 +384,20 @@ def main():
     out["purged_walk_forward"] = purged_walk_forward(df)  # empty if data too short (expected)
     out["unpurged_walk_forward_OPTIMISTIC"] = unpurged_walk_forward(df)
 
+    def _clean(x):  # NaN -> null so the JSON is valid for browsers
+        if isinstance(x, float):
+            return None if (x != x or x in (float("inf"), float("-inf"))) else x
+        if isinstance(x, dict):
+            return {k: _clean(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [_clean(v) for v in x]
+        return x
+
+    out = _clean(out)
     path = os.environ.get("VALIDATION_OUT", "/tmp/validation_results.json")
     with open(path, "w") as f:
-        json.dump(out, f, indent=2, default=float)
-    print(json.dumps(out, indent=2, default=float))
+        json.dump(out, f, indent=2, allow_nan=False, default=float)
+    print(json.dumps(out, indent=2, allow_nan=False, default=float))
     print(f"\nwrote {path}")
 
 
