@@ -89,7 +89,24 @@ dashboard. Secrets live in **Secret Manager**, images in **Artifact Registry**, 
 `FastAPI` · `Cloud Run` · `Cloud Scheduler` · `Artifact Registry` · `Secret Manager` · `Terraform` ·
 `Anthropic Claude` (agents) · `GitHub Actions`.
 
-## Run it locally
+## ▶️ Run the demo
+
+One command takes a fresh clone to visible OSS Radar output — it sets up a local
+virtualenv, installs the pipeline and dashboard, runs the full pipeline on a small
+sample into a local DuckDB warehouse (no cloud, no API keys, no side effects), and
+tells you how to view it:
+
+```bash
+make demo          # or: scripts/demo_local.sh   (scripts/demo_local.sh --serve to auto-open the dashboard)
+make dashboard     # then open http://localhost:8099
+```
+
+No cloud credentials or Anthropic key required. Without a GitHub token the demo
+still runs — some GitHub-derived signals may be rate-limited (HTTP 403); run
+`gh auth login` or set `OSS_RADAR_GITHUB_TOKEN` to lift the limit. Artifacts land
+in predictable places: `oss_radar.duckdb`, `reports/<date>.md`, and `models_local/`.
+
+## Run it locally (manual)
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
