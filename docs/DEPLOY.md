@@ -63,7 +63,8 @@ gcloud projects delete "$(cat ../../.gcp_project)"
 
 ## Configuration reference
 
-All settings are env vars prefixed `OSS_RADAR_` (see `pipeline/oss_radar/config/settings.py`):
+All settings are env vars prefixed `OSS_RADAR_` (see `pipeline/oss_radar/config/settings.py`). For local
+runs, copy [`.env.example`](../.env.example) to `.env` and edit; the table below is the cloud-relevant subset:
 
 | Var | Default | Notes |
 |---|---|---|

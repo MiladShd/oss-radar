@@ -1,0 +1,147 @@
+{
+  "config": {
+    "horizon": 70,
+    "smooth": 28,
+    "stride": 3,
+    "n_features": 14,
+    "n_packages": 91
+  },
+  "leak_quantification": {
+    "centered_leaky": {
+      "r2": 0.7015097451647034,
+      "spearman": 0.7800008161388471,
+      "mae": 0.12322855670588743,
+      "n_train": 637,
+      "n_test": 182
+    },
+    "causal_trailing": {
+      "r2": 0.5821939424027394,
+      "spearman": 0.7903737418274145,
+      "mae": 0.11809320915953717,
+      "n_train": 637,
+      "n_test": 182
+    }
+  },
+  "baselines": {
+    "model": {
+      "r2": 0.5821939424027394,
+      "spearman": 0.7903737418274145,
+      "mae": 0.11809320915953717
+    },
+    "persistence_raw_strawman": {
+      "r2": -6.082446453076229,
+      "spearman": 0.36978156342344365,
+      "mae": 0.7897876010726973
+    },
+    "persistence_calibrated_fair": {
+      "r2": 0.021903581124664617,
+      "spearman": 0.36978156342344365,
+      "fitted_slope": 0.14137110346600468,
+      "fitted_intercept": 0.09211639079207097
+    },
+    "predict_zero": {
+      "r2": -0.5486180409074701,
+      "spearman": null,
+      "mae": 0.27918945330301875
+    },
+    "predict_train_mean": {
+      "r2": -0.03422081888961337,
+      "spearman": null,
+      "mae": 0.22753621237400176
+    },
+    "skill_vs_persistence_r2": 0.9410082292375415
+  },
+  "package_disjoint_cv": {
+    "r2": 0.3628105941019364,
+    "spearman": 0.6830796715773836,
+    "n": 819,
+    "n_splits": 5,
+    "note": "train/test share zero packages -> honest 'unseen package' cross-sectional skill"
+  },
+  "head_reliability": {
+    "pred_vs_actual_slope": 0.5520863645817329,
+    "top10_overlap": 2,
+    "top_decile_mae": 0.2648137282146146,
+    "overall_mae": 0.11809320915953717,
+    "high_growth_bias": -0.1410794940228269
+  },
+  "effective_sample": {
+    "n_test_rows": 182,
+    "n_packages_test": 91,
+    "overlap_factor_horizon_over_stride": 23.333333333333332,
+    "naive_effective_n_approx": 7.8,
+    "independent_time_blocks_approx": 0.3
+  },
+  "cluster_bootstrap": {
+    "r2_ci": [
+      0.37109912731789635,
+      0.7204796313710897
+    ],
+    "spearman_ci": [
+      0.6468798625718002,
+      0.8868727139136665
+    ],
+    "skill_vs_persistence_ci": [
+      0.8943921671073776,
+      0.9733128568902796
+    ],
+    "r2_median": 0.5811516649028114,
+    "spearman_median": 0.7911206808580376
+  },
+  "permutation_test": {
+    "observed_spearman": 0.7903737418274145,
+    "p_value": 0.0004997501249375312
+  },
+  "diebold_mariano_vs_persistence": {
+    "dm_stat": -21.25106205451428,
+    "p_value": 0.0,
+    "mean_loss_diff": -0.6884448775293133,
+    "favored": "model"
+  },
+  "within_between": {
+    "r2_between": 0.5905525714219694,
+    "n_packages": 91,
+    "median_rows_per_package": 2,
+    "r2_within": null,
+    "within_note": "insufficient temporal depth per package (~cross-sectional test); within-package skill cannot be measured on this data."
+  },
+  "origin_diagnostics": {
+    "n_distinct_origins": 9,
+    "origin_span_days": 24,
+    "horizon_days": 70,
+    "purged_temporal_cv_feasible": false,
+    "independent_forecasts_in_time_approx": 0.34,
+    "verdict": "Temporal CV INFEASIBLE: every valid forecast origin falls inside a single 24-day window (< the 70-day horizon), so all 70-day target windows overlap \u2014 the data contains ~1 independent forecast in time. Inference below is cross-sectional (across packages at one origin-cluster), NOT multi-origin temporal."
+  },
+  "purged_walk_forward": [],
+  "unpurged_walk_forward_OPTIMISTIC": [
+    {
+      "fold": 1,
+      "n_train": 455,
+      "n_test": 91,
+      "r2": 0.6531301724009129,
+      "spearman": 0.8273928969581144
+    },
+    {
+      "fold": 2,
+      "n_train": 546,
+      "n_test": 91,
+      "r2": 0.6844962424815735,
+      "spearman": 0.8350692785475394
+    },
+    {
+      "fold": 3,
+      "n_train": 637,
+      "n_test": 91,
+      "r2": 0.6335166298678939,
+      "spearman": 0.831565535913362
+    },
+    {
+      "fold": 4,
+      "n_train": 728,
+      "n_test": 91,
+      "r2": 0.6337572940173919,
+      "spearman": 0.8000318522057652
+    }
+  ]
+}

@@ -122,6 +122,11 @@ pip install -r dashboard/requirements.txt
 uvicorn dashboard.app.main:app --reload --port 8099   # → http://localhost:8099
 ```
 
+Optional config (watchlist size, GitHub / Anthropic tokens) lives in a `.env` file —
+copy [`.env.example`](.env.example) to start. **Both tokens are optional for local runs:**
+without a GitHub token some GitHub-derived signals are reduced but the demo still runs;
+without an Anthropic key the agent crew runs in deterministic template mode.
+
 Tests & lint:
 
 ```bash

@@ -144,6 +144,8 @@ tr.row:hover td{background:var(--panel2)}
       <button data-tab="packages">Packages</button>
       <button data-tab="models">Model history</button>
       <button data-tab="accuracy">Accuracy</button>
+      <button data-tab="validation">Validation</button>
+      <button data-tab="timeseries" style="display:none">Time series</button>
       <button data-tab="agents">Agent activity</button>
     </nav>
     <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
@@ -208,19 +210,59 @@ tr.row:hover td{background:var(--panel2)}
   <!-- ACCURACY -->
   <section data-view="accuracy" hidden>
     <div class="hero"><h1 style="font-size:22px">Model accuracy — predicted vs reality</h1>
-      <p>The growth model graded on a <b>time-aware held-out test</b> (train on earlier dates, predict later
-         unseen package-days), recomputed every run. Treat the scores as a ranked watchlist, not a magnitude forecast.</p></div>
+      <p>The growth model graded on a <b>time-aware held-out test</b>, recomputed every run. This is a
+         <b>cross-sectional ranking</b> — Spearman is the metric that matters; the absolute R² is leak-sensitive. See the
+         <a href="#" onclick="tab('validation');return false" style="color:var(--teal)">Validation</a> tab for the
+         honest, leak-free numbers and confidence intervals.</p></div>
     <div class="kpis" id="btkpis"></div>
     <div class="panel"><h3>Calibration — predicted-growth decile vs realized</h3>
       <div class="sub">Bars = what actually happened · line = what the model predicted. Bars rising left→right means the ranking holds.</div>
-      <canvas id="btCalib" height="110"></canvas></div>
+      <div style="height:240px;position:relative"><canvas id="btCalib"></canvas></div></div>
     <div class="grid2" style="margin-top:18px">
       <div class="panel"><h3>Predicted vs actual</h3>
         <div class="sub">each point = one held-out package-day · dashed line = perfect prediction</div>
-        <canvas id="btScatter" height="150"></canvas></div>
+        <div style="height:240px;position:relative"><canvas id="btScatter"></canvas></div></div>
       <div class="panel"><h3>Risk model ROC</h3>
         <div class="sub" id="btRocSub">true-positive vs false-positive rate</div>
-        <canvas id="btRoc" height="150"></canvas></div>
+        <div style="height:240px;position:relative"><canvas id="btRoc"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- VALIDATION -->
+  <section data-view="validation" hidden>
+    <div class="hero"><h1 style="font-size:22px">Validation — does the R² claim survive scrutiny?</h1>
+      <p>A statistical harness plus a 12-agent LLM statistician panel stress-tested the headline and found two data
+         leaks and a strawman baseline. Honest verdict: a <b>cross-sectional ranked momentum watchlist</b>, not a
+         time-forward forecast. <a id="valdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Full report →</a></p></div>
+    <div class="kpis" id="valkpis"></div>
+    <div class="panel"><h3>The number, at four levels of honesty</h3>
+      <div class="sub">Each leak or strawman removed lowers the held-out R². The honest skill is the unseen-package bar.</div>
+      <div style="height:240px;position:relative"><canvas id="valHier"></canvas></div></div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="panel"><h3>Why it's cross-sectional, not a forecast</h3>
+        <div class="sub" id="valCaveat">…</div></div>
+      <div class="panel"><h3>How we know — no number trusted until reproduced</h3>
+        <div class="sub" id="valMethod">…</div></div>
+    </div>
+  </section>
+
+  <!-- TIME SERIES (nav hidden until validated) -->
+  <section data-view="timeseries" hidden>
+    <div class="hero"><h1 style="font-size:22px">Time-series analysis — the daily series, by the book</h1>
+      <p>Unlike the cross-sectional growth model, the <b>daily download series</b> supports proper time-series work:
+         every assumption is hypothesis-tested, and short-horizon forecasts are <b>rolling-origin validated</b>.
+         <a id="tsdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Harness →</a></p></div>
+    <div class="kpis" id="tskpis"></div>
+    <div class="panel"><h3>Assumption tests (91 series)</h3>
+      <div class="sub">Each property is hypothesis-tested. The series violate iid/stationarity — which is exactly why
+        differencing and a seasonal model are required.</div>
+      <div id="tsDiag" style="margin-top:10px"></div></div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="panel"><h3>Forecast accuracy — MASE (lower is better; 1.0 = no better than naive)</h3>
+        <div class="sub">Rolling-origin, expanding window, 18 volume-stratified packages. ETS beats the baselines at 1 day; skill fades by 7.</div>
+        <div style="height:240px;position:relative"><canvas id="tsMase"></canvas></div></div>
+      <div class="panel"><h3>Is the model adequate?</h3>
+        <div class="sub" id="tsResid">…</div></div>
     </div>
   </section>
 
@@ -255,6 +297,8 @@ function tab(name){
   if(name==="packages"&&!PKGS.length) loadPackages();
   if(name==="models") loadModels();
   if(name==="accuracy") loadBacktest();
+  if(name==="validation") loadValidation();
+  if(name==="timeseries") loadTimeseries();
   if(name==="agents") loadAgents();
 }
 $$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
@@ -388,7 +432,7 @@ function axes(xt,yt,xmin,xmax,ymin,ymax){
   const x=Object.assign({title:{display:true,text:xt,color:"#7d93a3"}},a());
   const y=Object.assign({title:{display:true,text:yt,color:"#7d93a3"}},a());
   if(xmin!=null){x.min=xmin;x.max=xmax;} if(ymin!=null){y.min=ymin;y.max=ymax;}
-  return {responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x,y}};
+  return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x,y}};
 }
 async function loadBacktest(){
   const d=await j("/api/backtest"); const g=d.growth, r=d.risk;
@@ -398,15 +442,19 @@ async function loadBacktest(){
   $("#btkpis").innerHTML=[["spearman",m.spearman],["MAE",m.mae],["RMSE",m.rmse],["R\u00b2",m.r2],["test rows",m.n_test]]
     .map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v==null?"\u2014":v}</div></div>`).join("");
   const cal=g.calibration||[];
+  const cv=cal.flatMap(c=>[c.actual,c.pred]).filter(v=>v!=null);
+  const cmin=cv.length?Math.min(...cv):-0.1, cmax=cv.length?Math.max(...cv):0.1, cpad=((cmax-cmin)*0.12)||0.05;
   btCharts.push(new Chart($("#btCalib"),{data:{labels:cal.map(c=>c.decile),datasets:[
     {type:"bar",label:"actual",data:cal.map(c=>c.actual),backgroundColor:"#ffb347",borderRadius:3,order:2},
     {type:"line",label:"predicted",data:cal.map(c=>c.pred),borderColor:"#2ee6c4",pointStyle:"rectRot",pointRadius:3,borderWidth:2,tension:.2,order:1}
-  ]},options:axes("predicted-growth decile","7-day growth")}));
-  const sc=g.scatter||[], lo=-0.05, hi=0.12;
+  ]},options:axes("predicted-growth decile","realized log-growth",null,null,cmin-cpad,cmax+cpad)}));
+  const sc=g.scatter||[];
+  const sv=sc.flatMap(p=>[p[0],p[1]]);
+  const lo=sv.length?Math.min(...sv):-0.5, hi=sv.length?Math.max(...sv):1.0;
   btCharts.push(new Chart($("#btScatter"),{data:{datasets:[
     {type:"scatter",data:sc.map(p=>({x:p[0],y:p[1]})),backgroundColor:"rgba(46,230,196,0.45)",pointRadius:3},
     {type:"line",data:[{x:lo,y:lo},{x:hi,y:hi}],borderColor:"#7d93a3",borderDash:[6,4],borderWidth:1.5,pointRadius:0}
-  ]},options:axes("predicted","actual",lo,hi,-0.5,1.0)}));
+  ]},options:axes("predicted","actual",lo,hi,lo,hi)}));
   if(r&&r.points&&r.points.length){
     $("#btRocSub").textContent=`AUC ${r.auc==null?"n/a":r.auc} \u00b7 n=${r.n}, ${r.n_pos} at-risk`;
     btCharts.push(new Chart($("#btRoc"),{data:{datasets:[
@@ -416,6 +464,99 @@ async function loadBacktest(){
   } else if($("#btRocSub")){ $("#btRocSub").textContent="insufficient at-risk samples yet"; }
 }
 
+let valChart=null;
+async function loadValidation(){
+  const d=await (await fetch("/static/validation.json")).json();
+  const lk=d.leak_quantification, b=d.baselines, pd=d.package_disjoint_cv,
+        cb=d.cluster_bootstrap, od=d.origin_diagnostics, hr=d.head_reliability;
+  const f2=x=>x==null?"—":(+x).toFixed(2);
+  $("#valkpis").innerHTML=[
+    ["unseen-pkg Spearman", f2(pd.spearman)],
+    ["honest R²", f2(pd.r2)],
+    ["R² lost to leaks", "−"+f2(lk.centered_leaky.r2-pd.r2)],
+    ["significance", "p<0.001"],
+    ["independent forecasts", od.independent_forecasts_in_time_approx],
+  ].map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const rows=[
+    ["centered (leaky)", lk.centered_leaky.r2, "#ff5c6c"],
+    ["causal · same pkgs", lk.causal_trailing.r2, "#ffb347"],
+    ["unseen pkgs (honest)", pd.r2, "#2ee6c4"],
+    ["fair baseline", b.persistence_calibrated_fair.r2, "#7d93a3"],
+  ];
+  if(valChart) valChart.destroy();
+  valChart=new Chart($("#valHier"),{type:"bar",
+    data:{labels:rows.map(r=>r[0]),datasets:[{data:rows.map(r=>r[1]),backgroundColor:rows.map(r=>r[2]),borderRadius:4}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>"R² = "+c.parsed.x.toFixed(3)}}},
+      scales:{x:{min:0,max:0.8,title:{display:true,text:"held-out R²",color:"#7d93a3"},
+        ticks:{color:"#7d93a3",font:{family:"IBM Plex Mono",size:10}},grid:{color:"#16212c"}},
+        y:{ticks:{color:"#cfe0ea",font:{family:"IBM Plex Mono",size:11}},grid:{display:false}}}}});
+  $("#valCaveat").innerHTML=`${od.verdict}<br><br><b>${od.n_distinct_origins}</b> origins span
+    <b>${od.origin_span_days} days</b> &lt; the 70-day horizon → ~<b>${od.independent_forecasts_in_time_approx}</b>
+    independent forecasts in time; within-package skill is unmeasurable. The head of the list is least reliable:
+    top-10 overlap with real movers is <b>${hr.top10_overlap}/10</b>, predictions range-compressed
+    (slope ${f2(hr.pred_vs_actual_slope)}).`;
+  $("#valMethod").innerHTML=`Bootstrap (resampling whole packages) 95% CI: R² [${cb.r2_ci.map(f2).join(", ")}],
+    Spearman [${cb.spearman_ci.map(f2).join(", ")}]; permutation p<0.001.<br><br>A 12-agent LLM statistician panel
+    adversarially audited the harness — it found the shared-package leak and the strawman baseline — then 3 agents
+    reproduced every leak-free number from raw data to full float precision. The model beats a fairly-calibrated
+    baseline (Spearman ${f2(b.persistence_calibrated_fair.spearman)}) on ranking.`;
+  $("#valdoc").href="https://github.com/MiladShd/oss-radar/blob/main/docs/VALIDATION.md";
+}
+let tsChart=null;
+async function loadTimeseries(){
+  const d=await (await fetch("/static/timeseries.json")).json();
+  const ds=d.diagnostics_summary, fs=d.forecast_summary, fp=d.forecast_per_package;
+  const pct=x=>x==null?"—":Math.round(x*100)+"%";
+  const io=ds.integration_order_counts||{}, cells=ds.adf_kpss_cell_counts||{};
+  const nonstat=((io["I(1)"]||0)+(io["I(2)+"]||0))/ds.n_series;
+  $("#tskpis").innerHTML=[
+    ["non-stationary I(1)", pct(nonstat)],
+    ["weekly-seasonal", pct(ds.weekly_seasonal_frac)],
+    ["ETS 1-day MASE", fs.median_mase_ets_h1],
+    ["beats baselines @1", pct(fs.ets_beats_seasonal_naive_h1_frac)],
+    ["95% interval coverage", pct(fs.median_picp95_h1)],
+  ].map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const rows=[
+    ["Stationarity (ADF c / ct)", `rejects unit root ${pct(ds.adf_c_rejects_unitroot_frac)} / ${pct(ds.adf_ct_rejects_unitroot_frac)}`, "✗ mostly non-stationary"],
+    ["KPSS (H₀ stationary)", `rejects ${pct(ds.kpss_rejects_stationarity_frac)} · floored ${pct(ds["kpss_floored_at_0.01_frac"])}`, "✗ rejects stationarity"],
+    ["ADF×KPSS cells", `unit-root ${cells.unit_root||0} · conflict ${cells.conflict||0} · clean I(0) ${cells.stationary||0}`, "mostly unit-root"],
+    ["Integration order", `I(1): ${io["I(1)"]||0} · I(0): ${io["I(0)"]||0} · I(2)+: ${io["I(2)+"]||0}`, "→ difference once"],
+    ["Autocorrelation (Ljung-Box)", pct(ds.autocorrelated_frac)+" autocorrelated", "✗ not white noise"],
+    ["Weekly seasonality (STL)", pct(ds.weekly_seasonal_frac)+" seasonal · strength "+(+ds.median_seasonal_strength).toFixed(2), "✓ strong weekly"],
+    ["Heteroscedasticity (ARCH, remainder)", pct(ds.heteroscedastic_remainder_frac)+" heteroscedastic", "✗ volatility clusters"],
+    ["Normality (Jarque-Bera, remainder)", pct(ds.nonnormal_remainder_frac)+" non-normal", "✗ heavy tails"],
+  ];
+  $("#tsDiag").innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">${
+    rows.map(r=>`<tr style="border-top:1px solid var(--line)">
+      <td style="padding:6px 8px;color:var(--ink)">${r[0]}</td>
+      <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono)">${r[1]}</td>
+      <td style="padding:6px 8px;color:var(--muted)">${r[2]}</td></tr>`).join("")}</table>`;
+  const med=a=>{const v=a.filter(x=>x!=null).sort((x,y)=>x-y),m=v.length>>1;return v.length?(v.length%2?v[m]:(v[m-1]+v[m])/2):null;};
+  const mase=(model,h)=>med(fp.map(r=>r.mase[model]&&r.mase[model]["h"+h]));
+  const hs=[1,3,7];
+  if(tsChart) tsChart.destroy();
+  tsChart=new Chart($("#tsMase"),{type:"bar",
+    data:{labels:hs.map(h=>h+"-day ahead"), datasets:[
+      {label:"naive", data:hs.map(h=>mase("naive",h)), backgroundColor:"#7d93a3", borderRadius:3},
+      {label:"seasonal-naive", data:hs.map(h=>mase("seasonal_naive",h)), backgroundColor:"#ffb347", borderRadius:3},
+      {label:"ETS", data:hs.map(h=>mase("ets",h)), backgroundColor:"#2ee6c4", borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:"#cfe0ea",boxWidth:12}}},
+      scales:{y:{title:{display:true,text:"MASE (1.0 = naive)",color:"#7d93a3"},suggestedMax:1.1,ticks:{color:"#7d93a3"},grid:{color:"#16212c"}},
+              x:{ticks:{color:"#cfe0ea",font:{family:"IBM Plex Mono"}},grid:{display:false}}}}});
+  $("#tsResid").innerHTML=`<b>1-day ahead:</b> ETS clearly wins — MASE ${fs.median_mase_ets_h1} vs seasonal-naive
+    ${fs.median_mase_seasonal_naive_h1}, beating it in <b>${pct(fs.ets_beats_seasonal_naive_h1_frac)}</b> of packages
+    (Diebold-Mariano p≈1e-6), and ETS matches/beats a SARIMA(1,1,1)(1,0,0,7) contender in
+    <b>${fs.ets_beats_sarima_h1_count}/${fs.n_sarima_compared}</b>.<br><br>
+    <b>Adequacy:</b> 1-step residuals white-noise in ${pct(fs.ets_residuals_white_noise_frac)} of packages;
+    95% intervals cover ${pct(fs.median_picp95_h1)} (mild undercoverage — the series are heteroscedastic);
+    Mincer-Zarnowitz slope ${fs.median_mz_slope} (1.0 = calibrated).<br><br>
+    <b>3 & 7 days:</b> skill fades fast — ETS still edges seasonal-naive at 3 days
+    (${pct(fs.ets_beats_seasonal_naive_h3_frac)}), but by 7 days it is ≈ persistence (MASE ${fs.median_mase_ets_h7}).
+    An honest limit, not a bug.`;
+  $("#tsdoc").href="https://github.com/MiladShd/oss-radar/blob/main/pipeline/scripts/timeseries_analysis.py";
+}
 async function loadAgents(){
   const acts=await j("/api/agents");
   const byDay={};
