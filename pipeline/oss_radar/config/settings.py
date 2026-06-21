@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     backfill_days: int = 180
 
     # --- Model hyperparameters ---
-    growth_horizon_days: int = 7
+    growth_horizon_days: int = 14
     min_train_rows: int = 200
     random_seed: int = 42
 
