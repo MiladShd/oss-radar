@@ -143,7 +143,7 @@ def build_predictions(
                 "category": snap.get("category"),
                 "momentum_score": m_score,
                 "risk_score": risk_score,
-                "growth_pred_7d": round(float(growth_pred[i]), 4),
+                "growth_pred_70d": round(float(growth_pred[i]), 4),
                 "momentum_label": m_label,
                 "risk_level": risk_level,
                 "top_reasons": reasons,

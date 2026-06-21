@@ -39,6 +39,12 @@ variable "schedule" {
   description = "Daily cron (UTC) for the pipeline job"
 }
 
+variable "validate_schedule" {
+  type        = string
+  default     = "30 10 * * *"
+  description = "Daily cron (UTC) for the validation backstop job (runs after the pipeline)"
+}
+
 variable "bq_dataset" {
   type    = string
   default = "oss_radar"

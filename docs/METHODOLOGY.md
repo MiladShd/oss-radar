@@ -5,29 +5,34 @@ This document is deliberately candid about what the models do and don't claim. T
 
 ## Growth model (momentum)
 
-**Task.** Predict next-7-day *relative* growth of weekly downloads:
-`growth_target_7d = downloads[t+1..t+7] / downloads[t-6..t] − 1`.
+**Task.** Predict 70-day smoothed download momentum:
+`growth_target_70d = log1p(downloads[t+1..t+70]) - log1p(downloads[t-69..t])`.
+The long horizon is intentional: raw 7-day download growth is mostly noise, while 10-week momentum is more
+decision-useful and measurably learnable from the 180-day pypistats window.
 
 **Features.** Pure download-dynamics computed from the daily series, so they are identically distributed between
 historical training rows and the latest scoring row:
 
-- `log_d7`, `log_d28` — weekly / monthly download base (log1p)
+- `log_d7`, `log_d28`, `log_d56`, `log_d84` — weekly through 12-week download base (log1p)
 - `velocity` — average daily downloads this week
 - `mom_7v7` — this week vs. previous week
 - `mom_7v28` — this week vs. the monthly average week
+- `mom_28v28`, `mom_56v56`, `mom_28v56` — longer-horizon momentum ratios
 - `trend_slope_28` — normalized least-squares slope over the last 28 days
+- `trend_slope_56`, `trend_slope_84` — longer-horizon trend slopes
 - `volatility_28` — coefficient of variation over the last 28 days
 
 **Training data.** The 180-day pypistats backfill yields thousands of `(package, as-of-date)` rows on the very
-first run (sliding window, stride 3, ≥28 days of history before each as-of date).
+first run (sliding window, stride 3, ≥84 days of history before each as-of date).
 
 **Validation.** A **time-aware split** (train on earlier as-of dates, test on later ones) — never a random shuffle —
 so the reported MAE / RMSE / R² / Spearman reflect genuine forward forecasting. **Spearman rank correlation** is the
 promotion metric because the product use is *ranking* packages by momentum, not predicting an exact number.
 
-**Honesty.** 7-day download growth is noisy and partly driven by exogenous events (releases, CI mirrors, news).
-Expect a modest positive Spearman that grows as more history accrues. `momentum_score` is a bounded sigmoid of the
-prediction (0 growth → 50), so it always produces a sensible ranking even when absolute skill is low.
+**Honesty.** This is a ranked momentum watchlist, not a precise package-level forecast. The validation harness found
+and removed a centered-moving-average leak; the defensible claim is cross-sectional ranking skill on 70-day momentum,
+tracked openly with held-out Spearman and backtest artifacts. `momentum_score` is a bounded sigmoid of the prediction
+(0 growth → 50), so it produces a stable ranking even when absolute calibration is modest.
 
 ## Risk model
 

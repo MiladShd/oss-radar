@@ -8,7 +8,7 @@ This guards against ever accidentally serving a frozen/stale model.
 import numpy as np
 import pandas as pd
 
-from oss_radar.features import DOWNLOAD_FEATURES
+from oss_radar.features import DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
 from oss_radar.models.growth import GrowthModel
 
 
@@ -18,7 +18,7 @@ def _dataset(seed: int, signal_on: str | None, n: int = 800) -> pd.DataFrame:
     df["feature_date"] = pd.date_range("2026-01-01", periods=n).date
     base = rng.normal(0, 0.1, n)
     # the outcome depends on a chosen feature ("today's reality"); None => pure noise
-    df["growth_target_7d"] = (df[signal_on] * 1.2 + base) if signal_on else base
+    df[GROWTH_TARGET_COLUMN] = (df[signal_on] * 1.2 + base) if signal_on else base
     return df
 
 

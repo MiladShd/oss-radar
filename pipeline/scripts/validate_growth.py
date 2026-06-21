@@ -40,6 +40,16 @@ SEED = 42
 FEATURES = active_download_features()
 rng = np.random.default_rng(SEED)
 
+# Where to drop the reproducibility CSVs (held-out predictions, training rows, OOF). The Wolfram
+# educational cross-check (pipeline/wolfram/validate_growth.wl) reads these to re-derive every
+# statistic from scratch. Defaults to /tmp; the daily runner points it at a durable dir / GCS.
+ARTIFACT_DIR = os.environ.get("VALIDATION_ARTIFACT_DIR", "/tmp")
+
+
+def _dump_csv(frame: pd.DataFrame, fname: str) -> None:
+    os.makedirs(ARTIFACT_DIR, exist_ok=True)
+    frame.to_csv(os.path.join(ARTIFACT_DIR, fname), index=False)
+
 
 # ----------------------------- series construction -----------------------------
 def _raw_series(history: pd.DataFrame) -> dict[str, dict]:
@@ -289,6 +299,9 @@ def package_disjoint_cv(df: pd.DataFrame, n_splits=5):
     for tr_idx, te_idx in gkf.split(df[FEATURES], y, df["name"].values):
         oof[te_idx] = fit_predict(df.iloc[tr_idx], df.iloc[te_idx])
     mask = ~np.isnan(oof)
+    # Dump out-of-fold predictions so the unseen-package R^2/Spearman can be re-derived
+    # independently (e.g. by the Wolfram educational cross-check) without retraining LightGBM.
+    _dump_csv(df.loc[mask, ["name", "y"]].assign(oof=oof[mask]), "validation_oof.csv")
     return {"r2": float(r2_score(y[mask], oof[mask])),
             "spearman": float(spearmanr(y[mask], oof[mask]).correlation),
             "n": int(mask.sum()), "n_splits": n_splits,
@@ -340,10 +353,11 @@ def main():
     tr, te = time_split(df)
     yhat = fit_predict(tr, te)
     y = te["y"].values
-    # dump exact held-out predictions so the inference can be reproduced independently
-    _dump = te[["name", "t", "y", "persistence"]].copy()
-    _dump["yhat"] = yhat
-    _dump.to_csv("/tmp/validation_testset.csv", index=False)
+    # Dump the exact held-out predictions AND the training rows so the inference can be reproduced
+    # independently (R^2/Spearman/MAE/DM from the test set; the FAIR calibrated-persistence
+    # baseline is fit on train then frozen onto test, so the train rows are needed to re-derive it).
+    _dump_csv(te[["name", "t", "y", "persistence"]].assign(yhat=yhat), "validation_testset.csv")
+    _dump_csv(tr[["name", "t", "y", "persistence"]], "validation_trainset.csv")
 
     # 2) baselines + skill on the honest split (incl. a FAIR calibrated persistence)
     base = {"model": _metrics(y, yhat),

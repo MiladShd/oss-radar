@@ -156,11 +156,11 @@ def _template_report(date_str: str, preds: pd.DataFrame, model_metrics: dict,
         f"{gm.get('spearman', float('nan')):.3f} · risk model auc {rm.get('auc', float('nan')):.3f} · "
         f"download coverage {quality.get('coverage', 0)*100:.0f}%_"
     )
-    lines += ["", "## 🚀 Momentum movers", "", "| Package | Momentum | Pred 7d growth | Why |",
+    lines += ["", "## 🚀 Momentum movers", "", "| Package | Momentum | Pred 70d growth | Why |",
               "|---|---|---|---|"]
     for _, r in mom.iterrows():
         reasons = ", ".join(r.get("top_reasons") or [])
-        lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {r['growth_pred_7d']:+.1%} | {reasons} |")
+        lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {r['growth_pred_70d']:+.1%} | {reasons} |")
     lines += ["", "## ⚠️ Rising dependency risk", "", "| Package | Risk | Level | Why |", "|---|---|---|---|"]
     for _, r in risk.iterrows():
         reasons = ", ".join(r.get("top_reasons") or [])
@@ -174,13 +174,13 @@ def _risk_analyst(ctx: AgentContext, date_str: str, preds: pd.DataFrame,
     template = _template_report(date_str, preds, model_metrics, quality)
     report = template
     if ctx.llm.available:
-        mom = _movers(preds, "momentum_score")[["name", "momentum_score", "growth_pred_7d", "top_reasons"]]
+        mom = _movers(preds, "momentum_score")[["name", "momentum_score", "growth_pred_70d", "top_reasons"]]
         risk = _movers(preds, "risk_score")[["name", "risk_score", "risk_level", "top_reasons"]]
         prompt = (
             f"Date: {date_str}. Tracked {len(preds)} packages.\n"
             f"Growth model spearman={model_metrics.get('growth', {}).get('spearman')}, "
             f"risk model auc={model_metrics.get('risk', {}).get('auc')}.\n\n"
-            f"Top momentum movers (momentum_score 0-100, growth_pred_7d is forecast weekly-download growth):\n"
+            f"Top momentum movers (momentum_score 0-100, growth_pred_70d is forecast 70-day download momentum):\n"
             f"{mom.to_string(index=False)}\n\n"
             f"Top dependency-risk risers (risk_score 0-100):\n{risk.to_string(index=False)}\n\n"
             "Write the daily brief: a 2-3 sentence summary, then a 'Momentum' section and a "

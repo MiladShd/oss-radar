@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily local Wolfram validation cross-check (macOS launchd user agent).
+
+  Install:
+    cp infra/launchd/com.ossradar.wolfram-validate.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.ossradar.wolfram-validate.plist
+    launchctl start com.ossradar.wolfram-validate          # run once now
+  Inspect:
+    launchctl list | grep ossradar
+    tail -f /Users/milad/oss-radar/pipeline/wolfram/logs/launchd.out.log
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.ossradar.wolfram-validate.plist
+
+  Adjust ProgramArguments path / Hour / Minute / OSS_RADAR_GCS_BUCKET to your setup.
+  RunAtLoad catches up a missed day if the Mac was asleep at the scheduled time.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ossradar.wolfram-validate</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/milad/oss-radar/pipeline/wolfram/run_local.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/milad/oss-radar</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- Uncomment to pull cloud-refreshed artifacts + publish the freshness marker:
+        <key>OSS_RADAR_GCS_BUCKET</key>
+        <string>oss-radar-2c5fe9-oss-radar</string>
+        -->
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>13</integer>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/milad/oss-radar/pipeline/wolfram/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/milad/oss-radar/pipeline/wolfram/logs/launchd.err.log</string>
+</dict>
+</plist>

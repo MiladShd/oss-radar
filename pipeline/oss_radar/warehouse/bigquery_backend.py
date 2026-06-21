@@ -42,10 +42,17 @@ class BigQueryWarehouse(Warehouse):
             tbl_id = self._table_id(table)
             schema = [bigquery.SchemaField(name, S.BIGQUERY_TYPES[ctype]) for name, ctype in cols]
             try:
-                self._client.get_table(tbl_id)
+                tbl = self._client.get_table(tbl_id)
             except NotFound:
                 self._client.create_table(bigquery.Table(tbl_id, schema=schema))
                 log.info("bq.table_created", table=table)
+            else:
+                existing = {field.name for field in tbl.schema}
+                missing = [field for field in schema if field.name not in existing]
+                if missing:
+                    tbl.schema = list(tbl.schema) + missing
+                    self._client.update_table(tbl, ["schema"])
+                    log.info("bq.table_schema_updated", table=table, added=[f.name for f in missing])
 
     def insert_rows(self, table: str, rows: list[dict]) -> int:
         if not rows:

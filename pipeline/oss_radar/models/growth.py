@@ -1,4 +1,4 @@
-"""Growth model — LightGBM regressor forecasting next-7-day download growth.
+"""Growth model — LightGBM regressor forecasting 70-day download momentum.
 
 Uses a time-aware split (train on earlier as-of dates, test on later ones) so reported
 metrics reflect genuine forward forecasting rather than random-shuffle leakage. SHAP gives
@@ -17,7 +17,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from oss_radar.features import DOWNLOAD_FEATURES
+from oss_radar.features import DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
 
 
 @dataclass
@@ -29,11 +29,11 @@ class GrowthModel:
     seed: int = 42
 
     def fit(self, df: pd.DataFrame) -> dict:
-        df = df.dropna(subset=["growth_target_7d"]).sort_values("feature_date")
+        df = df.dropna(subset=[GROWTH_TARGET_COLUMN]).sort_values("feature_date")
         # clip extreme targets (download spikes) to stabilize the regressor
-        df = df.assign(growth_target_7d=df["growth_target_7d"].clip(-0.9, 3.0))
+        df = df.assign(**{GROWTH_TARGET_COLUMN: df[GROWTH_TARGET_COLUMN].clip(-0.9, 3.0)})
         X = df[self.features].astype(float)
-        y = df["growth_target_7d"].astype(float)
+        y = df[GROWTH_TARGET_COLUMN].astype(float)
 
         split = int(len(df) * 0.8)
         Xtr, Xte = X.iloc[:split], X.iloc[split:]

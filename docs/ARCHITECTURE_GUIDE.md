@@ -160,7 +160,7 @@ of **future** into a feature used to forecast the future. The trailing MA only u
 training rows are identically distributed to the live scoring row.
 **How:** `_smooth` is a 28-day trailing MA; `_download_features` computes features at an as-of date
 via offset windows and mean-normalized OLS slopes; `build_growth_training` slides a stride-3 cursor
-(min_history 84) and sets `growth_target_7d = log1p(future-70d) − log1p(trailing-70d)`. Risk label
+(min_history 84) and sets `growth_target_70d = log1p(future-70d) − log1p(trailing-70d)`. Risk label
 starts as `_at_risk_label` (heuristic OR), then `forward.py` relabels on realized escalation; the
 target is clipped to `[-0.9, 3.0]` at train time.
 
@@ -212,10 +212,10 @@ bands: <0.10 low, 0.10–0.25 moderate, >0.25 high; label-churn bands 0.15 / 0.3
   ground-truth perf monitoring is impossible run-to-run; PSI is the label-free industry standard.
   **Defend:** quantile bins, `eps=1e-4` floor, paired with categorical label churn.
 
-**Hardest question:** *"The column is named `growth_target_7d` but you predict 70-day growth — which
-is it?"* It's the 70-day log-growth target; the name is legacy/misleading documentation debt, not a
-logic bug — `GROWTH_HORIZON=70`, `forward.py` computes `log1p(future_70d) − log1p(this_70d)`. I'd
-rename it.
+**Hardest question:** *"Is this really a forecast or a ranking?"* It's a ranked 70-day momentum
+watchlist, not a precise per-package time-forward forecaster. The target and persisted prediction
+field now say 70d explicitly (`growth_target_70d`, `growth_pred_70d`), and the separate
+time-series harness is where the short-horizon forecasting claim lives.
 
 ### 3.5 Agents
 **What:** a Claude-powered crew that **manages** the pipeline (monitoring, reporting,
@@ -444,7 +444,7 @@ p < 0.001 (1/2001); n=182 but effective ≈ 91 (~23× overlap); 91 packages; 9 o
 (STL remainder); PICP@95 0.921, MZ slope 0.84.
 
 **Config / orchestrator** — `random_seed=42`, `min_train_rows=200`, `feature_lift_margin=0.01`,
-`risk_horizon_days=14`, `forward_min_rows=25`, `growth_horizon_days=14`; `run_id` = `%Y%m%dT%H%M%SZ`;
+`risk_horizon_days=14`, `forward_min_rows=25`, `growth_horizon_days=70`; `run_id` = `%Y%m%dT%H%M%SZ`;
 9 DAG stages; `collect()` max_workers 4.
 
 **Agents / LLM** — `llm_model=claude-opus-4-8`, `llm_max_tokens=1600`; `use_llm` gate = key starts
@@ -469,8 +469,8 @@ TF pins git-SHA image tag; dashboard SPA 582 lines, Chart.js 4.4.1, 7 API endpoi
    check (the harness already computes the CI) so a noisy epsilon can't flip the champion.
 4. **Remote Terraform state** — move `tfstate` to a GCS backend with locking + versioning (the local
    committed file is solo-only).
-5. **Fix the documentation debt** — rename `growth_target_7d` → `growth_target_70d`, and update the
-   stale `engineering.py` docstring that still cites 0.74 to point at VALIDATION.md's honest numbers.
+5. **Clean up legacy warehouse columns** — after one or two successful post-migration runs, optionally
+   backfill/drop the old `growth_pred_7d` columns from long-lived warehouses.
 6. **Grow the validation surface** — more packages → more independent cross-sectional units, and once
    enough forward-outcome risk labels accumulate, tune the 0.6/0.4 risk blend weights against realized
    outcomes instead of hand-setting them.

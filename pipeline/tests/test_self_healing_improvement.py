@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from oss_radar.config.active_features import active_download_features, with_candidate
-from oss_radar.features import DOWNLOAD_FEATURES
+from oss_radar.features import DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
 from oss_radar.ingest.healing import _carry_forward, identify_failures
 from oss_radar.models.experiment import best_candidate, evaluate_candidates
 from oss_radar.warehouse.duckdb_backend import DuckDBWarehouse
@@ -22,7 +22,7 @@ def _train_df(n=400):
         "velocity": rng.normal(0, 1, n),
         "recent_share": signal,                     # informative candidate
         "dow_volatility_7": rng.normal(0, 1, n),    # noise candidate
-        "growth_target_7d": signal * 0.5 + rng.normal(0, 0.05, n),
+        GROWTH_TARGET_COLUMN: signal * 0.5 + rng.normal(0, 0.05, n),
     })
 
 
@@ -42,7 +42,7 @@ def test_no_proposal_when_nothing_helps():
         "feature_date": pd.date_range("2026-01-01", periods=n).date,
         "log_d7": rng.normal(0, 1, n), "velocity": rng.normal(0, 1, n),
         "dow_volatility_7": rng.normal(0, 1, n),
-        "growth_target_7d": rng.normal(0, 1, n),  # pure noise target
+        GROWTH_TARGET_COLUMN: rng.normal(0, 1, n),  # pure noise target
     })
     results = evaluate_candidates(df, ["log_d7", "velocity"], ["dow_volatility_7"], seed=1)
     assert best_candidate(results, margin=0.05) is None

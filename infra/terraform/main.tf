@@ -260,3 +260,33 @@ resource "google_cloud_scheduler_job" "daily" {
 
   depends_on = [google_cloud_run_v2_job_iam_member.scheduler_invoke]
 }
+
+# --- Cloud Scheduler -> validation backstop (cloud-side cross-check refresh) ---
+# Runs the SAME pipeline job but overrides the entrypoint args to `validate --upload`, so the
+# growth-model validation stats + reproducibility dumps are regenerated daily and pushed to GCS
+# even if the local Mac (which holds the Wolfram Engine) is offline. The `validate` command also
+# alarms (structured log warning) when the local Wolfram educational cross-check has gone stale.
+resource "google_cloud_scheduler_job" "validate_daily" {
+  name      = "oss-radar-validate-daily"
+  region    = var.region
+  schedule  = var.validate_schedule
+  time_zone = "UTC"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.region}/jobs/${google_cloud_run_v2_job.pipeline.name}:run"
+    headers     = { "Content-Type" = "application/json" }
+    body = base64encode(jsonencode({
+      overrides = {
+        containerOverrides = [{
+          args = ["validate", "--upload", "--out", "/tmp/validation"]
+        }]
+      }
+    }))
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_job_iam_member.scheduler_invoke]
+}

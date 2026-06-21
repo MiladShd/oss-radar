@@ -17,6 +17,10 @@ def reasons(val):
     return ", ".join(val) if isinstance(val, list) else ""
 
 
+def growth_pred(row):
+    return row.get("growth_pred_70d", row.get("growth_pred_7d"))
+
+
 def main() -> None:
     wh = get_warehouse()
     preds = wh.query_df(
@@ -32,9 +36,9 @@ def main() -> None:
         mom = preds.sort_values("momentum_score", ascending=False).head(5)
         risk = preds.sort_values("risk_score", ascending=False).head(5)
         lines += [f"**Scored {len(preds)} packages.**", "", "### 🚀 Top momentum",
-                  "| Package | Momentum | Δ7d | Why |", "|---|--:|--:|---|"]
+                  "| Package | Momentum | Δ70d | Why |", "|---|--:|--:|---|"]
         for _, r in mom.iterrows():
-            lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {r['growth_pred_7d']*100:+.1f}% | {reasons(r['top_reasons'])} |")
+            lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {growth_pred(r)*100:+.1f}% | {reasons(r['top_reasons'])} |")
         lines += ["", "### ⚠️ Top risk", "| Package | Risk | Level | Why |", "|---|--:|---|---|"]
         for _, r in risk.iterrows():
             lines.append(f"| `{r['name']}` | {r['risk_score']:.0f} | {r['risk_level']} | {reasons(r['top_reasons'])} |")

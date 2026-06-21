@@ -48,6 +48,10 @@ def _fmt(x, spec: str = ".3f") -> str:
         return "n/a"
 
 
+def _growth_pred(row) -> float:
+    return row.get("growth_pred_70d", row.get("growth_pred_7d"))
+
+
 def main() -> None:
     wh = get_warehouse()
     preds = wh.query_df(
@@ -105,12 +109,12 @@ def main() -> None:
         "",
         "## 🚀 Top momentum movers",
         "",
-        "| Package | Momentum | Pred 7d growth | Why |",
+        "| Package | Momentum | Pred 70d growth | Why |",
         "|---|--:|--:|---|",
     ]
     for _, r in mom.iterrows():
         L.append(
-            f"| `{r['name']}` | {r['momentum_score']:.0f} | {r['growth_pred_7d']:+.1%} "
+            f"| `{r['name']}` | {r['momentum_score']:.0f} | {_growth_pred(r):+.1%} "
             f"| {_reasons(r['top_reasons'])} |"
         )
 

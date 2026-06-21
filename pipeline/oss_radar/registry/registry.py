@@ -62,7 +62,8 @@ class ModelRegistry:
         return max(vals) if vals else None
 
     def persist(
-        self, wh: Warehouse, run_id: str, model_name: str, model_obj, metrics: dict, params: dict
+        self, wh: Warehouse, run_id: str, model_name: str, model_obj, metrics: dict, params: dict,
+        gate_passed: bool | None = None,
     ) -> tuple[bool, list[dict]]:
         version = f"{model_name}-{run_id}"
         local_path = self.local_dir / f"{version}.pkl"
@@ -76,19 +77,26 @@ class ModelRegistry:
 
         # Promote only on genuine improvement over the best-ever champion (strict, beyond margin).
         if new_val is None or new_val != new_val:  # NaN -> not a valid champion candidate
-            is_champion = False
+            beats = False
             note = f"not promoted: {metric_name} unavailable"
         elif prev is None:
-            is_champion = True
+            beats = True
             note = f"first champion: {metric_name}={new_val:.3f}"
         else:
-            is_champion = (new_val > prev + margin) if higher_better else (new_val < prev - margin)
+            beats = (new_val > prev + margin) if higher_better else (new_val < prev - margin)
             cmp = ">" if higher_better else "<"
             note = (
                 f"promoted: {metric_name}={new_val:.3f} {cmp} prev best {prev:.3f}"
-                if is_champion
+                if beats
                 else f"held challenger: {metric_name}={new_val:.3f} did not beat best {prev:.3f}"
             )
+        # HARD VALIDATION GATE: a model is served only if it also clears the validation gate
+        # (leak-free, beats the fair baseline, generalises). So is_champion == TRUE always implies
+        # the gate passed, which is why "last-good champion" below needs no separate flag.
+        is_champion = beats
+        if gate_passed is False:
+            is_champion = False
+            note = f"BLOCKED by validation gate ({note})"
         metrics["promotion_note"] = note
 
         self._mlflow_log(model_name, version, params, metrics, is_champion)
@@ -108,6 +116,47 @@ class ModelRegistry:
         log.info("registry.persisted", model=model_name, version=version,
                  champion=is_champion, primary=f"{metric_name}={new_val}", prev=prev)
         return is_champion, rows
+
+    # --- auto-rollback: load the last-good (gate-passed) champion artifact ---
+
+    def load_champion(self, wh: Warehouse, model_name: str, model_cls):
+        """Return (model, version) for the most recently promoted champion, or (None, None).
+
+        Because promotion now requires the validation gate, every is_champion row is by
+        construction a gate-passed model — so this IS the "last-good" model to roll back to
+        when a freshly-trained candidate fails the gate."""
+        try:
+            df = wh.query_df(
+                f"SELECT version, gcs_uri, trained_at FROM model_runs "
+                f"WHERE model_name = '{model_name}' AND is_champion = TRUE AND gcs_uri != '' "
+                f"ORDER BY trained_at DESC LIMIT 1"
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("registry.load_champion_query_failed", model=model_name, error=str(exc))
+            return None, None
+        if df.empty:
+            return None, None
+        uri, version = df.iloc[0]["gcs_uri"], df.iloc[0]["version"]
+        try:
+            path = self._materialize(uri, version)
+            return model_cls.load(path), version
+        except Exception as exc:  # noqa: BLE001
+            log.warning("registry.load_champion_failed", model=model_name, uri=uri, error=str(exc))
+            return None, None
+
+    def _materialize(self, uri: str, version: str) -> str:
+        """Resolve a stored artifact URI to a local path (downloading from GCS if needed)."""
+        if not uri.startswith("gs://"):
+            return uri  # local backend stores the filesystem path directly
+        local_path = self.local_dir / f"{version}.pkl"
+        if not local_path.exists():
+            from google.cloud import storage
+
+            _, _, rest = uri.partition("gs://")
+            bucket_name, _, blob_name = rest.partition("/")
+            client = storage.Client(project=self.settings.gcp_project)
+            client.bucket(bucket_name).blob(blob_name).download_to_filename(str(local_path))
+        return str(local_path)
 
     def _mlflow_log(self, model_name, version, params, metrics, is_champion) -> None:
         try:
