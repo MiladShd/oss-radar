@@ -141,6 +141,7 @@ tr.row:hover td{background:var(--panel2)}
     </div>
     <nav class="tabs">
       <button data-tab="overview" class="on">Overview</button>
+      <button data-tab="audit">Audit</button>
       <button data-tab="packages">Packages</button>
       <button data-tab="models">Model history</button>
       <button data-tab="accuracy">Accuracy</button>
@@ -266,6 +267,26 @@ tr.row:hover td{background:var(--panel2)}
     </div>
   </section>
 
+  <!-- AUDIT -->
+  <section data-view="audit" hidden>
+    <div class="hero"><h1 style="font-size:22px">Dependency risk audit</h1>
+      <p>Paste your <code>requirements.txt</code> — get a supply-chain risk report on <b>your</b> dependencies:
+         version-aware vulnerabilities, maintenance risk, release staleness, and adoption trend. Watchlist
+         packages are instant; anything else is fetched live from the same sources.</p></div>
+    <div class="grid2" style="align-items:start">
+      <div class="panel"><h3>Your dependencies</h3>
+        <div class="sub">Pinned <code>==x.y.z</code> versions are checked for <b>active</b> CVEs, not lifetime noise.</div>
+        <textarea id="auditIn" rows="9" spellcheck="false" placeholder="transformers==4.30.0
+langchain
+fastapi==0.100.0
+numpy" style="width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:11px;border-radius:10px;outline:none;resize:vertical"></textarea>
+        <div style="margin-top:10px"><button id="auditRun" style="font-family:var(--mono);font-size:13px;color:#06281f;background:var(--teal);border:none;padding:10px 16px;border-radius:9px;cursor:pointer;font-weight:600">Run audit</button>
+        <span id="auditNote" class="sub" style="margin-left:10px"></span></div></div>
+      <div class="panel"><h3>Summary</h3><div id="auditSummary" class="sub">Paste your dependencies and run an audit.</div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><div id="auditResults"></div></div>
+  </section>
+
   <!-- AGENTS -->
   <section data-view="agents" hidden>
     <div class="hero"><h1 style="font-size:22px">What the AI agents did</h1>
@@ -302,6 +323,7 @@ function tab(name){
   if(name==="agents") loadAgents();
 }
 $$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
+const _ar=$("#auditRun"); if(_ar) _ar.onclick=runAudit;
 
 function moverRow(p,scoreKey,colorFn,levelKey){
   const v=p[scoreKey]??0, lvl=p[levelKey]||"";
@@ -556,6 +578,33 @@ async function loadTimeseries(){
     (${pct(fs.ets_beats_seasonal_naive_h3_frac)}), but by 7 days it is ≈ persistence (MASE ${fs.median_mase_ets_h7}).
     An honest limit, not a bug.`;
   $("#tsdoc").href="https://github.com/MiladShd/oss-radar/blob/main/pipeline/scripts/timeseries_analysis.py";
+}
+async function runAudit(){
+  const txt=($("#auditIn").value||"").trim();
+  if(!txt){$("#auditNote").textContent="paste some packages first";return;}
+  const btn=$("#auditRun"); btn.disabled=true; $("#auditNote").textContent="auditing\u2026 (fetching live data for unknown packages)";
+  try{
+    const d=await (await fetch("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requirements:txt})})).json();
+    const s=d.summary||{};
+    const chip=(label,n,col)=>n?`<span class="badge" style="margin-right:6px;background:${col};color:#06281f">${n} ${label}</span>`:"";
+    $("#auditSummary").innerHTML=`<div style="font-size:15px;color:var(--ink);margin-bottom:10px">${s.audited||0} of ${s.total||0} audited</div>`+
+      chip("critical",s.critical,"#ff5c6c")+chip("high",s.high,"#ffb347")+chip("watch",s.watch,"#7d93a3")+chip("healthy",s.healthy,"#2ee6c4")+
+      (s.exposed?`<div class="sub" style="margin-top:10px;color:var(--red)"><b>${s.exposed}</b> pinned version(s) exposed to active CVEs</div>`:"");
+    const vc=v=>({critical:"var(--red)",high:"var(--amber)",watch:"var(--muted)",healthy:"var(--teal)"}[v]||"var(--faint)");
+    const rows=(d.packages||[]).map(r=>{
+      if(r.status!=="ok") return `<tr><td class="pkg">${r.name}</td><td class="sub" colspan="5">${r.status}</td></tr>`;
+      const vuln=r.vuln_count?`${r.vuln_count} ${r.vuln_kind==="active"?"active":"hist."}${r.max_severity?" \u00b7 "+r.max_severity.toLowerCase():""}`:"\u2014";
+      const tr=r.trend_pct==null?"\u2014":(r.trend_pct>=0?"+":"")+r.trend_pct+"%";
+      return `<tr class="row"><td class="pkg">${r.name}${r.version?'<small style="color:var(--faint)"> =='+r.version+'</small>':''}</td>`+
+        `<td style="color:${vc(r.verdict)};font-family:var(--mono);font-weight:600">${r.verdict}</td>`+
+        `<td class="num">${r.risk_score==null?"\u2014":r.risk_score}</td><td class="mono" style="font-size:12px">${vuln}</td>`+
+        `<td class="num">${r.days_since_release==null?"\u2014":r.days_since_release+"d"}</td><td class="num">${tr}</td></tr>`+
+        `<tr><td colspan="6" class="sub" style="padding:0 10px 10px;border:none">${r.reason}</td></tr>`;
+    }).join("");
+    $("#auditResults").innerHTML=`<table><thead><tr><th>package</th><th>verdict</th><th>risk</th><th>vulns</th><th>last release</th><th>trend</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("#auditNote").textContent="";
+  }catch(e){$("#auditNote").textContent="audit failed: "+e.message;}
+  btn.disabled=false;
 }
 async function loadAgents(){
   const acts=await j("/api/agents");

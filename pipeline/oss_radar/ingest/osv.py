@@ -25,10 +25,15 @@ def _published(v: dict) -> datetime | None:
         return None
 
 
-def fetch(client: HttpClient, package: str) -> dict:
+def fetch(client: HttpClient, package: str, version: str | None = None) -> dict:
+    """Vulnerabilities for a package. If ``version`` is given, OSV returns only the vulns that
+    actually affect that version — the right signal for auditing a pinned dependency."""
     out: dict = {"_ok": False, "vuln_count": 0, "vuln_new_14d": 0, "vuln_new_28d": 0,
                  "max_severity": None}
-    data = client.post_json(URL, {"package": {"name": package, "ecosystem": "PyPI"}})
+    payload: dict = {"package": {"name": package, "ecosystem": "PyPI"}}
+    if version:
+        payload["version"] = version
+    data = client.post_json(URL, payload)
     if data is None:
         return out
     out["_ok"] = True

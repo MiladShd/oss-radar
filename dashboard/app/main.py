@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.app import queries
+from oss_radar.audit import audit_packages, parse_requirements
 
 log = structlog.get_logger(__name__)
 app = FastAPI(title="OSS Radar", docs_url="/api/docs")
@@ -63,6 +64,19 @@ def api_agents():
 @app.get("/api/runs")
 def api_runs():
     return JSONResponse(_safe(lambda: queries.runs(30), []))
+
+
+@app.post("/api/audit")
+async def api_audit(request: Request):
+    body = await request.json()
+    text = (body or {}).get("requirements", "")
+    pkgs = (body or {}).get("packages")
+    on_demand = bool((body or {}).get("on_demand", True))
+    deps = parse_requirements(text) if text else [(p, None) for p in (pkgs or [])]
+    if not deps:
+        return JSONResponse({"summary": {"total": 0, "audited": 0}, "packages": []})
+    return JSONResponse(_safe(lambda: audit_packages(deps[:60], on_demand=on_demand, max_on_demand=30),
+                              {"summary": {}, "packages": [], "error": "audit failed"}))
 
 
 @app.get("/")
