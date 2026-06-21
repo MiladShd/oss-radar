@@ -109,6 +109,15 @@ class HttpClient:
         except ValueError:
             return None
 
+    def get_text(self, url: str, headers: dict | None = None) -> str | None:
+        """Plain-text GET (e.g. a raw requirements.txt). Returns None on any failure."""
+        try:
+            resp = self._request("GET", url, headers=headers)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("http.get_failed", url=url, error=str(exc))
+            return None
+        return resp.text if resp is not None else None
+
     def get_status(self, url: str, params: dict | None = None) -> int | None:
         """Like get_json but returns the HTTP status (used where 202-vs-200 matters)."""
         try:

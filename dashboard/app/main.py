@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.app import queries
-from oss_radar.audit import audit_packages, parse_requirements
+from oss_radar.audit import audit_packages, fetch_repo_requirements, parse_requirements
 
 log = structlog.get_logger(__name__)
 app = FastAPI(title="OSS Radar", docs_url="/api/docs")
@@ -70,13 +70,24 @@ def api_runs():
 async def api_audit(request: Request):
     body = await request.json()
     text = (body or {}).get("requirements", "")
+    repo = (body or {}).get("repo", "")
     pkgs = (body or {}).get("packages")
     on_demand = bool((body or {}).get("on_demand", True))
-    deps = parse_requirements(text) if text else [(p, None) for p in (pkgs or [])]
+    source = None
+    if repo:
+        deps, source = _safe(lambda: fetch_repo_requirements(repo), ([], None))
+    elif text:
+        deps = parse_requirements(text)
+    else:
+        deps = [(p, None) for p in (pkgs or [])]
     if not deps:
-        return JSONResponse({"summary": {"total": 0, "audited": 0}, "packages": []})
-    return JSONResponse(_safe(lambda: audit_packages(deps[:60], on_demand=on_demand, max_on_demand=30),
-                              {"summary": {}, "packages": [], "error": "audit failed"}))
+        return JSONResponse({"summary": {"total": 0, "audited": 0}, "packages": [],
+                             "source": source or "no dependencies found"})
+    out = _safe(lambda: audit_packages(deps[:60], on_demand=on_demand, max_on_demand=30),
+                {"summary": {}, "packages": [], "error": "audit failed"})
+    if source:
+        out["source"] = source
+    return JSONResponse(out)
 
 
 @app.get("/")

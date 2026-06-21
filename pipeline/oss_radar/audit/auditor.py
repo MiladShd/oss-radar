@@ -14,6 +14,7 @@ vulns actually affect that version (the real exposure), instead of the package's
 from __future__ import annotations
 
 import re
+import tomllib
 
 import pandas as pd
 
@@ -52,6 +53,64 @@ def parse_requirements(text: str) -> list[tuple[str, str | None]]:
         vm = _VER.search(spec)
         out.append((name, vm.group(1) if vm else None))
     return out
+
+
+_GH = re.compile(r"(?:github\.com[/:])?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+
+
+def _slug(repo: str) -> str | None:
+    m = _GH.search(repo.strip())
+    return m.group(1) if (m and "/" in m.group(1)) else None
+
+
+def _parse_pyproject(text: str) -> list[tuple[str, str | None]]:
+    try:
+        data = tomllib.loads(text)
+    except Exception:
+        return []
+    deps: list[tuple[str, str | None]] = []
+    proj = data.get("project", {}) or {}
+    for d in proj.get("dependencies", []) or []:
+        deps += parse_requirements(d)
+    for grp in (proj.get("optional-dependencies") or {}).values():
+        for d in grp or []:
+            deps += parse_requirements(d)
+    poetry = ((data.get("tool", {}) or {}).get("poetry", {}) or {}).get("dependencies", {}) or {}
+    for name in poetry:
+        if name.lower() != "python":
+            deps.append((_norm(name), None))
+    seen, out = set(), []
+    for n, v in deps:
+        if n not in seen:
+            seen.add(n)
+            out.append((n, v))
+    return out
+
+
+def fetch_repo_requirements(repo: str, settings=None) -> tuple[list[tuple[str, str | None]], str | None]:
+    """Fetch a public GitHub repo's dependency list (requirements.txt, then pyproject.toml).
+
+    Returns (deps, source_label). No auth needed — uses raw.githubusercontent.com.
+    """
+    settings = settings or get_settings()
+    slug = _slug(repo)
+    if not slug:
+        return [], None
+    http = HttpClient(timeout=settings.http_timeout)
+    paths = ["requirements.txt", "requirements/base.txt", "requirements/requirements.txt", "reqs.txt"]
+    for branch in ("main", "master"):
+        for path in paths:
+            txt = http.get_text(f"https://raw.githubusercontent.com/{slug}/{branch}/{path}")
+            if txt:
+                deps = parse_requirements(txt)
+                if deps:
+                    return deps, f"{slug}@{branch}/{path}"
+        txt = http.get_text(f"https://raw.githubusercontent.com/{slug}/{branch}/pyproject.toml")
+        if txt:
+            deps = _parse_pyproject(txt)
+            if deps:
+                return deps, f"{slug}@{branch}/pyproject.toml"
+    return [], f"no dependency file found in {slug}"
 
 
 def _num(v):

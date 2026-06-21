@@ -167,7 +167,7 @@ tr.row:hover td{background:var(--panel2)}
     <div class="grid2">
       <div class="panel">
         <h3><span class="dot" style="background:var(--teal)"></span> Momentum movers</h3>
-        <div class="sub">Highest forecast 7-day adoption momentum</div>
+        <div class="sub">Highest forecast 70-day adoption momentum</div>
         <div id="movers"><div class="loading">scanning…</div></div>
       </div>
       <div class="panel">
@@ -190,7 +190,7 @@ tr.row:hover td{background:var(--panel2)}
       <thead><tr>
         <th data-s="name">Package</th><th data-s="category">Category</th>
         <th data-s="momentum_score" class="num">Momentum</th><th data-s="risk_score" class="num">Risk</th>
-        <th data-s="growth_pred_7d" class="num">Δ7d</th><th data-s="stars" class="num">Stars</th>
+        <th data-s="growth_pred_70d" class="num">Δ70d</th><th data-s="stars" class="num">Stars</th>
         <th data-s="dependent_repos_count" class="num">Dependents</th><th data-s="vuln_count" class="num">Vulns</th>
       </tr></thead><tbody id="pbody"></tbody></table></div>
   </section>
@@ -275,11 +275,12 @@ tr.row:hover td{background:var(--panel2)}
          packages are instant; anything else is fetched live from the same sources.</p></div>
     <div class="grid2" style="align-items:start">
       <div class="panel"><h3>Your dependencies</h3>
-        <div class="sub">Pinned <code>==x.y.z</code> versions are checked for <b>active</b> CVEs, not lifetime noise.</div>
+        <div class="sub">Pinned <code>==x.y.z</code> versions get an <b>active</b>-CVE check. Or paste a GitHub repo URL.</div>
         <textarea id="auditIn" rows="9" spellcheck="false" placeholder="transformers==4.30.0
 langchain
 fastapi==0.100.0
-numpy" style="width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:11px;border-radius:10px;outline:none;resize:vertical"></textarea>
+numpy
+or: openai/openai-python" style="width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:11px;border-radius:10px;outline:none;resize:vertical"></textarea>
         <div style="margin-top:10px"><button id="auditRun" style="font-family:var(--mono);font-size:13px;color:#06281f;background:var(--teal);border:none;padding:10px 16px;border-radius:9px;cursor:pointer;font-weight:600">Run audit</button>
         <span id="auditNote" class="sub" style="margin-left:10px"></span></div></div>
       <div class="panel"><h3>Summary</h3><div id="auditSummary" class="sub">Paste your dependencies and run an audit.</div></div>
@@ -379,7 +380,7 @@ function renderTable(){
       <td class="pkg">${p.name}</td><td><span class="cat">${p.category||""}</span></td>
       <td class="num"><span class="badge ${mb}">${Math.round(p.momentum_score||0)}</span></td>
       <td class="num"><b class="r-${rl}">${Math.round(p.risk_score||0)}</b></td>
-      <td class="num" style="color:${(p.growth_pred_7d||0)>=0?'var(--teal)':'var(--amber)'}">${pct(p.growth_pred_7d)}</td>
+      <td class="num" style="color:${(p.growth_pred_70d||0)>=0?'var(--teal)':'var(--amber)'}">${pct(p.growth_pred_70d)}</td>
       <td class="num">${fmt(p.stars)}</td><td class="num">${fmt(p.dependent_repos_count)}</td>
       <td class="num" style="color:${p.vuln_count>0?'var(--amber)':'var(--muted)'}">${p.vuln_count??0}</td></tr>`;
   }).join("")||`<tr><td colspan="8" class="loading">no matches</td></tr>`;
@@ -407,7 +408,7 @@ async function openDrawer(name){
     <div class="mono" style="color:var(--muted);font-size:12px">${p.category||""} · <a href="${repo}" target="_blank">${p.repo||"repo n/a"}</a></div>
     <div class="dscores">
       <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}</div>
-        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ7d ${pct(p.growth_pred_7d)}</div></div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${pct(p.growth_pred_70d)}</div></div>
       <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}</div>
         <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk</div></div>
     </div>
@@ -584,7 +585,10 @@ async function runAudit(){
   if(!txt){$("#auditNote").textContent="paste some packages first";return;}
   const btn=$("#auditRun"); btn.disabled=true; $("#auditNote").textContent="auditing\u2026 (fetching live data for unknown packages)";
   try{
-    const d=await (await fetch("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requirements:txt})})).json();
+    const oneLine=!txt.includes("\n");  /* _auditRepoDetect */
+    const isRepo=oneLine&&(txt.includes("github.com")||(txt.split("/").filter(Boolean).length===2&&!/[ =<>]/.test(txt)));
+    const payload=isRepo?{repo:txt.trim()}:{requirements:txt};
+    const d=await (await fetch("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})).json();
     const s=d.summary||{};
     const chip=(label,n,col)=>n?`<span class="badge" style="margin-right:6px;background:${col};color:#06281f">${n} ${label}</span>`:"";
     $("#auditSummary").innerHTML=`<div style="font-size:15px;color:var(--ink);margin-bottom:10px">${s.audited||0} of ${s.total||0} audited</div>`+
@@ -602,7 +606,7 @@ async function runAudit(){
         `<tr><td colspan="6" class="sub" style="padding:0 10px 10px;border:none">${r.reason}</td></tr>`;
     }).join("");
     $("#auditResults").innerHTML=`<table><thead><tr><th>package</th><th>verdict</th><th>risk</th><th>vulns</th><th>last release</th><th>trend</th></tr></thead><tbody>${rows}</tbody></table>`;
-    $("#auditNote").textContent="";
+    $("#auditNote").textContent=d.source?("source: "+d.source):"";
   }catch(e){$("#auditNote").textContent="audit failed: "+e.message;}
   btn.disabled=false;
 }

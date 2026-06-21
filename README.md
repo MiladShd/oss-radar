@@ -36,11 +36,41 @@ Picking and monitoring open-source dependencies is guesswork. OSS Radar turns it
 It runs entirely on **free, no-auth public data sources**, so anyone can clone it and reproduce the data
 locally — and it's **deployed live on GCP**, retraining itself on a daily schedule.
 
+## 🔍 Audit your own dependencies
+
+Don't just watch the ecosystem — **point it at your project.** Paste a `requirements.txt` (or a GitHub repo)
+and OSS Radar returns a supply-chain risk report on *your* actual dependencies:
+
+- **Version-aware CVEs** — a pinned `package==1.2.3` is checked against [OSV](https://osv.dev) for the
+  vulnerabilities that *actually affect that version*, not the package's lifetime CVE count (which would flag
+  every mature library as "critical").
+- **Maintenance risk** — staleness, bus-factor, abandonment, security posture — as a transparent score with reasons.
+- **Adoption trend** — week-over-week downloads, so you can spot a dependency that's quietly dying.
+
+Any PyPI package works: watchlist packages are instant, anything else is fetched live from the same sources.
+
+```bash
+oss-radar audit -r requirements.txt                 # from a requirements file
+oss-radar audit --repo pallets/flask                # straight from a GitHub repo (requirements.txt or pyproject.toml)
+oss-radar audit --packages "transformers==4.30.0,langchain,fastapi==0.100.0"
+```
+
+```text
+3 of 3 audited — 2 critical, 0 high, 1 watch, 0 healthy
+  2 pinned version(s) exposed to ACTIVE CVEs
+
+  !! transformers==4.30.0   risk   4.9  vuln 32 active      pinned version exposed to 32 critical vulns
+  !! vllm==0.2.0            risk  61.0  vuln 29 active      pinned version exposed to 29 critical vulns
+   ~ langchain              risk  53.6  vuln 38 historical  38 historical CVEs — pin a version to check exposure
+```
+
+Also in the dashboard's **Audit** tab and as `POST /api/audit` (`{"requirements": "..."}` or `{"repo": "owner/repo"}`).
+
 ## What it does
 
 | | |
 |---|---|
-| 📈 **Momentum model** | LightGBM regressor forecasting next-7-day download growth from time-series dynamics, with a time-aware backtest and SHAP explanations. |
+| 📈 **Momentum model** | LightGBM regressor forecasting 70-day download momentum from time-series dynamics, with a time-aware backtest and SHAP explanations. |
 | ⚠️ **Risk model** | LightGBM classifier + a transparent weighted composite (vulnerabilities, maintenance staleness, bus-factor, security scorecard, abandonment, issue backlog). |
 | 🤖 **Agent crew** | Seven agents *manage* the pipeline (they don't make the predictions): Healer, DataEngineer, DataQuality, DataScientist, ImprovementScientist, RiskAnalyst, MLOps. |
 | 🩹 **Self-healing** | The Healer retries transient ingest failures and carries forward last-known signals — a bad day at one source self-corrects instead of leaving holes. |
@@ -165,8 +195,9 @@ review gate every change). Full write-up: **[docs/IMPROVEMENT.md](docs/IMPROVEME
 
 ## Methodology & honesty
 
-Forecasting 7-day download growth is genuinely hard, and the watchlist is small — so the models are deliberately
-modest and their held-out metrics are tracked openly on the dashboard rather than hidden. The risk **score** is a
+Forecasting adoption momentum is genuinely hard, and the watchlist is small — so the models are deliberately
+modest and their held-out metrics are tracked openly on the dashboard rather than hidden. The growth model targets
+70-day smoothed momentum, not raw 7-day noise. The risk **score** is a
 transparent, documented composite; the risk **model** is a learner whose labels and caveats are spelled out in
 [docs/METHODOLOGY.md](docs/METHODOLOGY.md). Metrics improve as the daily snapshot history accumulates.
 
