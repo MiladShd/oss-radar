@@ -259,7 +259,7 @@ tr.row:hover td{background:var(--panel2)}
       <div id="tsDiag" style="margin-top:10px"></div></div>
     <div class="grid2" style="margin-top:18px">
       <div class="panel"><h3>Forecast accuracy — MASE (lower is better; 1.0 = no better than naive)</h3>
-        <div class="sub">Rolling-origin, expanding window, top 12 packages. ETS beats the baselines at 1 day; 7 days is far harder.</div>
+        <div class="sub">Rolling-origin, expanding window, 18 volume-stratified packages. ETS beats the baselines at 1 day; skill fades by 7.</div>
         <div style="height:240px;position:relative"><canvas id="tsMase"></canvas></div></div>
       <div class="panel"><h3>Is the model adequate?</h3>
         <div class="sub" id="tsResid">…</div></div>
@@ -507,46 +507,54 @@ let tsChart=null;
 async function loadTimeseries(){
   const d=await (await fetch("/static/timeseries.json")).json();
   const ds=d.diagnostics_summary, fs=d.forecast_summary, fp=d.forecast_per_package;
-  const pct=x=>Math.round(x*100)+"%";
+  const pct=x=>x==null?"—":Math.round(x*100)+"%";
+  const io=ds.integration_order_counts||{}, cells=ds.adf_kpss_cell_counts||{};
+  const nonstat=((io["I(1)"]||0)+(io["I(2)+"]||0))/ds.n_series;
   $("#tskpis").innerHTML=[
-    ["series non-stationary", pct(1-ds.level_stationary_frac)],
+    ["non-stationary I(1)", pct(nonstat)],
     ["weekly-seasonal", pct(ds.weekly_seasonal_frac)],
     ["ETS 1-day MASE", fs.median_mase_ets_h1],
-    ["beats naive @1", pct(fs.ets_beats_seasonal_naive_h1_frac)],
-    ["residuals white-noise", pct(fs.ets_residuals_white_noise_frac)],
+    ["beats baselines @1", pct(fs.ets_beats_seasonal_naive_h1_frac)],
+    ["95% interval coverage", pct(fs.median_picp95_h1)],
   ].map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  const io=ds.integration_order_counts||{};
   const rows=[
-    ["Stationarity (ADF + KPSS)", pct(ds.level_stationary_frac)+" stationary in level", "✗ non-stationary"],
+    ["Stationarity (ADF c / ct)", `rejects unit root ${pct(ds.adf_c_rejects_unitroot_frac)} / ${pct(ds.adf_ct_rejects_unitroot_frac)}`, "✗ mostly non-stationary"],
+    ["KPSS (H₀ stationary)", `rejects ${pct(ds.kpss_rejects_stationarity_frac)} · floored ${pct(ds["kpss_floored_at_0.01_frac"])}`, "✗ rejects stationarity"],
+    ["ADF×KPSS cells", `unit-root ${cells.unit_root||0} · conflict ${cells.conflict||0} · clean I(0) ${cells.stationary||0}`, "mostly unit-root"],
     ["Integration order", `I(1): ${io["I(1)"]||0} · I(0): ${io["I(0)"]||0} · I(2)+: ${io["I(2)+"]||0}`, "→ difference once"],
     ["Autocorrelation (Ljung-Box)", pct(ds.autocorrelated_frac)+" autocorrelated", "✗ not white noise"],
     ["Weekly seasonality (STL)", pct(ds.weekly_seasonal_frac)+" seasonal · strength "+(+ds.median_seasonal_strength).toFixed(2), "✓ strong weekly"],
-    ["Heteroscedasticity (ARCH)", pct(ds.heteroscedastic_frac)+" heteroscedastic", "✗ volatility clusters"],
-    ["Normality of Δ (Jarque-Bera)", pct(ds.nonnormal_diff_frac)+" non-normal", "✗ heavy tails"],
+    ["Heteroscedasticity (ARCH, remainder)", pct(ds.heteroscedastic_remainder_frac)+" heteroscedastic", "✗ volatility clusters"],
+    ["Normality (Jarque-Bera, remainder)", pct(ds.nonnormal_remainder_frac)+" non-normal", "✗ heavy tails"],
   ];
-  $("#tsDiag").innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12.5px">${
+  $("#tsDiag").innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">${
     rows.map(r=>`<tr style="border-top:1px solid var(--line)">
-      <td style="padding:7px 8px;color:var(--ink)">${r[0]}</td>
-      <td style="padding:7px 8px;color:var(--muted);font-family:var(--mono)">${r[1]}</td>
-      <td style="padding:7px 8px;color:var(--muted)">${r[2]}</td></tr>`).join("")}</table>`;
-  const med=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
-  const mase=(model,h)=>med(fp.map(r=>r.mase[model]["h"+h]));
-  const models=["naive","seasonal_naive","ets"], labels=["naive","seasonal-naive","ETS"];
+      <td style="padding:6px 8px;color:var(--ink)">${r[0]}</td>
+      <td style="padding:6px 8px;color:var(--muted);font-family:var(--mono)">${r[1]}</td>
+      <td style="padding:6px 8px;color:var(--muted)">${r[2]}</td></tr>`).join("")}</table>`;
+  const med=a=>{const v=a.filter(x=>x!=null).sort((x,y)=>x-y),m=v.length>>1;return v.length?(v.length%2?v[m]:(v[m-1]+v[m])/2):null;};
+  const mase=(model,h)=>med(fp.map(r=>r.mase[model]&&r.mase[model]["h"+h]));
+  const hs=[1,3,7];
   if(tsChart) tsChart.destroy();
   tsChart=new Chart($("#tsMase"),{type:"bar",
-    data:{labels, datasets:[
-      {label:"1-day ahead", data:models.map(m=>mase(m,1)), backgroundColor:"#2ee6c4", borderRadius:3},
-      {label:"7-day ahead", data:models.map(m=>mase(m,7)), backgroundColor:"#ffb347", borderRadius:3}]},
+    data:{labels:hs.map(h=>h+"-day ahead"), datasets:[
+      {label:"naive", data:hs.map(h=>mase("naive",h)), backgroundColor:"#7d93a3", borderRadius:3},
+      {label:"seasonal-naive", data:hs.map(h=>mase("seasonal_naive",h)), backgroundColor:"#ffb347", borderRadius:3},
+      {label:"ETS", data:hs.map(h=>mase("ets",h)), backgroundColor:"#2ee6c4", borderRadius:3}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{labels:{color:"#cfe0ea",boxWidth:12}}},
-      scales:{y:{title:{display:true,text:"MASE",color:"#7d93a3"},ticks:{color:"#7d93a3"},grid:{color:"#16212c"}},
+      scales:{y:{title:{display:true,text:"MASE (1.0 = naive)",color:"#7d93a3"},suggestedMax:1.1,ticks:{color:"#7d93a3"},grid:{color:"#16212c"}},
               x:{ticks:{color:"#cfe0ea",font:{family:"IBM Plex Mono"}},grid:{display:false}}}}});
-  $("#tsResid").innerHTML=`A model is <b>adequate</b> when its forecast errors are white noise — no structure
-    left to exploit. ETS 1-step residuals pass the Ljung-Box white-noise test in
-    <b>${pct(fs.ets_residuals_white_noise_frac)}</b> of packages, and ETS beats seasonal-naive at 1 day in
-    <b>${pct(fs.ets_beats_seasonal_naive_h1_frac)}</b> (Diebold-Mariano p ≈ 1e-6).<br><br>
-    At 7 days ahead, ETS MASE ${fs.median_mase_ets_h7} ≈ seasonal-naive ${fs.median_mase_seasonal_naive_h7}:
-    the weekly cycle is predictable, but genuine multi-day forecasting is hard — an honest limit, not a bug.`;
+  $("#tsResid").innerHTML=`<b>1-day ahead:</b> ETS clearly wins — MASE ${fs.median_mase_ets_h1} vs seasonal-naive
+    ${fs.median_mase_seasonal_naive_h1}, beating it in <b>${pct(fs.ets_beats_seasonal_naive_h1_frac)}</b> of packages
+    (Diebold-Mariano p≈1e-6), and ETS matches/beats a SARIMA(1,1,1)(1,0,0,7) contender in
+    <b>${fs.ets_beats_sarima_h1_count}/${fs.n_sarima_compared}</b>.<br><br>
+    <b>Adequacy:</b> 1-step residuals white-noise in ${pct(fs.ets_residuals_white_noise_frac)} of packages;
+    95% intervals cover ${pct(fs.median_picp95_h1)} (mild undercoverage — the series are heteroscedastic);
+    Mincer-Zarnowitz slope ${fs.median_mz_slope} (1.0 = calibrated).<br><br>
+    <b>3 & 7 days:</b> skill fades fast — ETS still edges seasonal-naive at 3 days
+    (${pct(fs.ets_beats_seasonal_naive_h3_frac)}), but by 7 days it is ≈ persistence (MASE ${fs.median_mase_ets_h7}).
+    An honest limit, not a bug.`;
   $("#tsdoc").href="https://github.com/MiladShd/oss-radar/blob/main/pipeline/scripts/timeseries_analysis.py";
 }
 async function loadAgents(){
