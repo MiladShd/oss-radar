@@ -88,4 +88,4 @@ def risk_backtest(risk_df: pd.DataFrame, features: list[str], seed: int = 42) ->
                               method="predict_proba")[:, 1]
     fpr, tpr, _ = roc_curve(y, proba)
     return {"auc": _r(roc_auc_score(y, proba)), "n": int(len(y)), "n_pos": n_pos,
-            "points": [[_r(a), _r(b)] for a, b in zip(fpr, tpr)]}
+            "points": [[_r(a), _r(b)] for a, b in zip(fpr, tpr, strict=False)]}
