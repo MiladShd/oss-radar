@@ -127,13 +127,18 @@ def _download_features(series: dict[date, float], asof: date) -> dict | None:
 
 
 def _smooth(series: dict[date, float], k: int) -> dict[date, float]:
+    """Causal (trailing) k-day moving average: smoothed[d] uses only days <= d.
+
+    A centered MA would let a feature at as-of date t peek up to k//2 days into the future,
+    which inflated the held-out R^2 by ~0.12 (see pipeline/scripts/validate_growth.py and
+    docs/VALIDATION.md). Trailing smoothing is leak-free for forecasting.
+    """
     if k <= 1:
         return series
-    half = k // 2
     out: dict[date, float] = {}
     for d in series:
-        vals = [series[d + timedelta(days=o)] for o in range(-half, half + 1)
-                if (d + timedelta(days=o)) in series]
+        vals = [series[d - timedelta(days=o)] for o in range(0, k)
+                if (d - timedelta(days=o)) in series]
         out[d] = sum(vals) / len(vals) if vals else series[d]
     return out
 
