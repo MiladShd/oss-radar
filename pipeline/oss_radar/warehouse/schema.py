@@ -99,7 +99,7 @@ FEATURES: list[Column] = [
     ("vuln_new_28d", "FLOAT"),
     ("archived", "FLOAT"),
     # labels (NULL on the latest scoring row)
-    ("growth_target_7d", "FLOAT"),
+    ("growth_target_70d", "FLOAT"),
     ("momentum_label", "STRING"),
     ("at_risk_label", "INT"),
     ("is_scoring_row", "BOOL"),
@@ -113,7 +113,7 @@ PREDICTIONS: list[Column] = [
     ("category", "STRING"),
     ("momentum_score", "FLOAT"),
     ("risk_score", "FLOAT"),
-    ("growth_pred_7d", "FLOAT"),
+    ("growth_pred_70d", "FLOAT"),
     ("momentum_label", "STRING"),
     ("risk_level", "STRING"),
     ("top_reasons", "JSON"),
@@ -164,6 +164,13 @@ BACKTEST: list[Column] = [
     ("payload", "JSON"),
 ]
 
+# Dogfooding: a supply-chain risk audit of OSS Radar's OWN dependencies, stored each run.
+SELF_AUDIT: list[Column] = [
+    ("run_id", "STRING"),
+    ("created_at", "TIMESTAMP"),
+    ("payload", "JSON"),
+]
+
 TABLES: dict[str, list[Column]] = {
     "snapshots": SNAPSHOTS,
     "download_history": DOWNLOAD_HISTORY,
@@ -173,6 +180,7 @@ TABLES: dict[str, list[Column]] = {
     "agent_activity": AGENT_ACTIVITY,
     "pipeline_runs": PIPELINE_RUNS,
     "backtest": BACKTEST,
+    "self_audit": SELF_AUDIT,
 }
 
 DUCKDB_TYPES = {

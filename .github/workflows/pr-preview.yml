@@ -31,6 +31,13 @@ jobs:
           OSS_RADAR_DUCKDB_PATH: preview.duckdb
           OSS_RADAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m oss_radar.cli run --dry-run --limit 8
+      - name: Validation gate (block a leak introduced on this branch)
+        env:
+          OSS_RADAR_BACKEND: duckdb
+          OSS_RADAR_DUCKDB_PATH: preview.duckdb
+        # --require-pass fails the PR check on a genuine gate failure; a skip on thin
+        # preview data (too few rows to verify) exits 0, so honest PRs are never blocked.
+        run: python -m oss_radar.cli gate --require-pass
       - name: Build comment
         env:
           OSS_RADAR_BACKEND: duckdb

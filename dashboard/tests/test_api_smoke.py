@@ -36,11 +36,11 @@ def _seed(path: str) -> DuckDBWarehouse:
     }])
     wh.insert_rows("predictions", [
         {"run_id": RUN_ID, "predicted_at": _NOW, "name": "vllm", "category": "llm",
-         "momentum_score": 88.0, "risk_score": 21.0, "growth_pred_7d": 0.12,
+         "momentum_score": 88.0, "risk_score": 21.0, "growth_pred_70d": 0.12,
          "momentum_label": "high", "risk_level": "low",
          "top_reasons": ["downloads accelerating", "active maintenance"]},
         {"run_id": RUN_ID, "predicted_at": _NOW, "name": "langchain", "category": "framework",
-         "momentum_score": 41.0, "risk_score": 67.0, "growth_pred_7d": -0.03,
+         "momentum_score": 41.0, "risk_score": 67.0, "growth_pred_70d": -0.03,
          "momentum_label": "low", "risk_level": "high",
          "top_reasons": ["recent CVE", "issue backlog growing"]},
     ])

@@ -15,10 +15,12 @@ flowchart TD
   L -- yes --> FL[Realized-outcome risk labels]
   HL & FL --> T[Retrain growth + risk]
   T --> E[Held-out evaluation]
-  E --> G{Beats the<br/>best-ever champion?}
+  E --> VG{Validation gate<br/>leak-free · beats fair baseline · generalises?}
+  VG -- no --> RB[Block promotion +<br/>auto-rollback to last-good champion]
+  VG -- yes --> G{Beats the<br/>best-ever champion?}
   G -- yes --> P[Promote → new champion]
   G -- no --> C[Keep as challenger]
-  P & C --> D[Drift monitor vs prior run]
+  RB & P & C --> D[Drift monitor vs prior run]
   D -- significant --> A[Agent flags + opens issue<br/>+ forces next-run retrain]
   D -- stable --> R[Daily brief + PR]
   A --> R
@@ -49,6 +51,39 @@ DataScientist · retrain_growth_model · Growth model retrained (spearman=0.214,
 So the served model's quality is **monotonic** — it can only ever stay the same or get better — and the dashboard's
 "model improvement over time" chart is the honest audit trail, including the runs that were *not* promoted (◆ marks
 promotions).
+
+## 2b. The validation gate — improvement can't ship a leak
+
+"Beats the best-ever Spearman" is necessary but **not sufficient**: a model can post a great held-out number because
+it *leaks* (the centered-MA lookahead leak inflated R² 0.74→0.58; a shared-package leak inflated it a further
+0.58→0.36 — see [VALIDATION.md](VALIDATION.md)). So before champion/challenger even runs, every retrained growth
+model must clear a **hard validation gate** (`models/validation_gate.py`), which encodes the validation findings as
+three automatic checks:
+
+1. **has-skill** — held-out R² beats the mean predictor *and* Spearman clears a floor (it actually predicts).
+2. **generalises** — package-disjoint (GroupKFold) Spearman clears a floor, *and* the same-package → unseen-package
+   R² gap isn't blown out (the shared-package memorisation-leak signature).
+3. **not-too-good** — held-out R² is below a ceiling; an implausibly high R² on this intrinsically noisy 70-day
+   target is the fingerprint of a re-introduced lookahead leak.
+
+Thresholds live in `settings` (`gate_*`) and default to the validated envelope (same-package R²≈0.58/ρ≈0.79,
+unseen-package R²≈0.36/ρ≈0.68). The gate's verdict is **enforced in three places**:
+
+- **Promotion** — `registry.persist(..., gate_passed=…)` blocks a gate-failing model from becoming champion no matter
+  how good its primary metric looks. So `is_champion == TRUE` now *implies* the model is leak-free.
+- **Serving / auto-rollback** — if the freshly-trained candidate fails the gate, the pipeline **does not serve it**; it
+  loads the last-good (gate-passed) champion and scores with that instead (`registry.load_champion`). A bad model
+  never reaches the dashboard, and there's nothing to manually revert.
+- **CI** — `pytest pipeline/tests/test_validation_gate.py` is a required check (a PR that weakens the gate fails CI),
+  and the PR-preview job runs `oss-radar gate --require-pass` so a leak introduced on a branch fails the PR.
+
+```
+DataScientist · validation_gate · BLOCKED: not_leaky_ceiling R²=0.93 > 0.90 (re-introduced lookahead leak?);
+  auto-rollback → serving last-good champion growth-20260615T0930Z.
+```
+
+When data is too thin to verify anything (early days, `< min_train_rows`), the gate **skips** rather than blocks — it
+never stalls the loop on missing evidence; the previous champion simply stays.
 
 ## 3. The risk model graduates from heuristic to realized outcomes
 
@@ -142,7 +177,9 @@ No step requires a human:
 | **Heal transient ingest failures** | **Healer agent** | **retry + carry-forward** |
 | Decide heuristic vs realized labels | `choose_risk_training` | automatic on history span |
 | Retrain + evaluate | models | Cloud Run Job |
-| Promote only if better | registry gate | recorded in BigQuery |
+| **Block leaks / sub-baseline models** | **validation gate** | **`models/validation_gate.py` (promotion + CI)** |
+| Promote only if better *and gate-clean* | registry gate | recorded in BigQuery |
+| **Auto-rollback a failed candidate** | **registry / pipeline** | **serve last-good champion** |
 | Detect drift + escalate | DataScientist agent | issue + forced retrain |
 | **Experiment + propose a new feature** | **ImprovementScientist agent** | **opens a PR with measured lift** |
 | Write the brief + open the PR | RiskAnalyst + MLOps agents | GitHub |
@@ -156,7 +193,7 @@ GitHub Actions auto-merge if you want zero-touch.
 opens a PR when one measurably lifts the model. Remaining extensions that build on the machinery already here:
 
 1. **Hyperparameter tuning** (Optuna) gated behind the same champion/challenger rule, so tuning can only ever help.
-2. **Rolling backtests** as the snapshot history deepens — evaluate momentum calls against realized 7-day outcomes
+2. **Rolling backtests** as the snapshot history deepens — evaluate momentum calls against realized 70-day outcomes
    and surface a precision-at-K curve on the dashboard.
 3. **Risk-feature candidates** — extend the candidate catalog and experiment harness to the risk model too.
 4. **Auto-merge** the daily report PR and auto-close stale drift issues via GitHub Actions for true zero-touch.
@@ -164,7 +201,7 @@ opens a PR when one measurably lifts the model. Remaining extensions that build 
 
 ## An honest ceiling
 
-Self-improvement is bounded by **signal** and **calendar time**, not by cleverness. Forecasting 7-day download
-growth is intrinsically noisy, and realized risk outcomes accrue one day at a time. What this design guarantees is
+Self-improvement is bounded by **signal** and **calendar time**, not by cleverness. Forecasting download
+momentum is intrinsically noisy, and realized risk outcomes accrue one day at a time. What this design guarantees is
 that the system **never regresses** (champion/challenger), **always learns from the freshest reality** (forward
 relabeling), and **tells you when something breaks** (drift monitoring) — automatically, every day.

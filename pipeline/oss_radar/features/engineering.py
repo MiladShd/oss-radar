@@ -3,8 +3,10 @@
 Growth model (supervised regression): multi-horizon download-dynamics features computed from
 the daily series so they are identically distributed between historical training rows and the
 latest scoring row. The label is the log-growth of downloads over a 70-day horizon (~10-week
-momentum) on a 28-day-smoothed series — far more predictable than raw 7-day growth (held-out
-R^2 ~0 -> ~0.74, Spearman 0.21 -> ~0.80), and arguably the more useful signal.
+momentum) on a 28-day-smoothed series — far more predictable than raw 7-day growth. Leak-free
+held-out skill is causal same-package R^2 ~0.582 (Spearman ~0.790) and package-disjoint
+"unseen-package" R^2 ~0.363 (Spearman ~0.683); the ~0.74/0.70 headline is RETIRED — it was a
+centered-MA lookahead leak (see docs/VALIDATION.md). Arguably the more useful signal.
 
 Risk model (cross-sectional): maintenance / popularity / security features from the latest
 snapshot, with a transparent ``at_risk_label`` (documented in docs/METHODOLOGY.md).
@@ -45,6 +47,7 @@ CANDIDATE_DOWNLOAD_FEATURES = [
     "dow_volatility_7",
 ]
 ALL_DOWNLOAD_FEATURES = DOWNLOAD_FEATURES + CANDIDATE_DOWNLOAD_FEATURES
+GROWTH_TARGET_COLUMN = "growth_target_70d"
 
 RISK_FEATURES = [
     "log_stars",
@@ -63,8 +66,10 @@ RISK_FEATURES = [
 ]
 
 # Forecasting 70-day momentum on a 28-day-smoothed series, with multi-horizon trend features,
-# is genuinely predictable (held-out R^2 ~0.74, Spearman ~0.80) without the trivial "big stays
-# big" volume prediction. The 180-day pypistats window caps how long the horizon can go.
+# is genuinely predictable (leak-free held-out R^2 ~0.582 same-package / ~0.363 package-disjoint,
+# Spearman ~0.790 / ~0.683; the ~0.74/0.70 headline is RETIRED — a centered-MA lookahead leak,
+# see docs/VALIDATION.md) without the trivial "big stays big" volume prediction. The 180-day
+# pypistats window caps how long the horizon can go.
 SMOOTH_WINDOW = 28
 GROWTH_HORIZON = 70
 
@@ -177,7 +182,7 @@ def build_growth_training(
                 if this_w > 0:
                     feats["name"] = name
                     feats["feature_date"] = cursor
-                    feats["growth_target_7d"] = math.log1p(future_w) - math.log1p(this_w)
+                    feats[GROWTH_TARGET_COLUMN] = math.log1p(future_w) - math.log1p(this_w)
                     rows.append(feats)
             cursor += timedelta(days=stride)
     return pd.DataFrame(rows)

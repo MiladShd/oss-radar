@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from oss_radar.models.growth import GrowthModel
-from oss_radar.models.risk import RiskModel
+if TYPE_CHECKING:  # annotations only — avoid dragging LightGBM into the lean dashboard image,
+    # which installs the pipeline with --no-deps. risk_composite (used by the audit API) must
+    # stay importable without scipy/sklearn/lightgbm. See dashboard/Dockerfile.
+    from oss_radar.models.growth import GrowthModel
+    from oss_radar.models.risk import RiskModel
 
 _GROWTH_REASON = {
     "log_d56": ("strong 8-week download base", "small 8-week download base"),
@@ -143,7 +147,7 @@ def build_predictions(
                 "category": snap.get("category"),
                 "momentum_score": m_score,
                 "risk_score": risk_score,
-                "growth_pred_7d": round(float(growth_pred[i]), 4),
+                "growth_pred_70d": round(float(growth_pred[i]), 4),
                 "momentum_label": m_label,
                 "risk_level": risk_level,
                 "top_reasons": reasons,

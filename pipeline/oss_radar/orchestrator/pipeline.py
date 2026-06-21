@@ -10,6 +10,7 @@ import structlog
 
 from oss_radar.agents.crew import run_crew
 from oss_radar.agents.llm import Claude
+from oss_radar.audit import audit_own_dependencies
 from oss_radar.config import Settings, get_settings
 from oss_radar.config.active_features import active_download_features, active_risk_features
 from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
@@ -21,6 +22,7 @@ from oss_radar.models.drift import compute_prediction_drift
 from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
 from oss_radar.models.scoring import build_predictions
+from oss_radar.models.validation_gate import GateResult, growth_gate
 from oss_radar.registry import ModelRegistry
 from oss_radar.warehouse import get_warehouse
 
@@ -67,7 +69,7 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     t = time.time()
     active_download = active_download_features()
     active_risk = active_risk_features()
-    train_df = build_growth_training(hist_df)
+    train_df = build_growth_training(hist_df, horizon=settings.growth_horizon_days)
     score_df = build_growth_scoring(hist_df)
     risk_df = build_risk_frame(snap_df)
     # Risk training labels: realized-outcome once daily history spans the horizon, else heuristic.
@@ -85,7 +87,19 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     risk_metrics = risk.fit(risk_train)
     stages["train"] = round(time.time() - t, 1)
 
-    # 4) Register (champion/challenger)
+    # 3b) VALIDATION GATE — does the retrained growth model clear the leak-free / beats-baseline /
+    # generalises bar (docs/VALIDATION.md)? Promotion AND serving are gated on this, so the daily
+    # self-improvement loop can never silently ship a leaky or sub-baseline model.
+    gate = (growth_gate(train_df, active_download, settings)
+            if settings.gate_enabled and growth.model is not None
+            else GateResult(passed=True, skipped=True))
+    if gate.metrics:
+        growth_metrics.update(gate.as_metric_dict())
+    log.info("pipeline.validation_gate", passed=gate.passed, skipped=gate.skipped,
+             reasons=gate.reasons, **{k: round(v, 4) for k, v in gate.metrics.items() if v == v})
+
+    # 4) Register (champion/challenger). Growth promotion is hard-gated: a candidate that fails
+    # the validation gate is BLOCKED from becoming champion regardless of its primary metric.
     registry = ModelRegistry(settings)
     model_runs_rows: list[dict] = []
     model_metrics: dict[str, dict] = {}
@@ -93,18 +107,32 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
         ("growth", growth, growth_metrics, {"model": "LightGBMRegressor", "horizon_days": settings.growth_horizon_days}),
         ("risk", risk, risk_metrics, {"model": "LightGBMClassifier"}),
     ]:
+        gate_passed = gate.passed if (name == "growth" and settings.gate_enabled and not gate.skipped) else None
         if model_obj.model is not None:
-            champ, rows = registry.persist(wh, run_id, name, model_obj, metrics, params)
+            champ, rows = registry.persist(wh, run_id, name, model_obj, metrics, params, gate_passed=gate_passed)
         else:
             champ, rows = False, []
         model_runs_rows.extend(rows)
         model_metrics[name] = {**metrics, "is_champion": champ}
     model_metrics["risk"]["label_mode"] = risk_label_mode
+    model_metrics["growth"]["gate"] = {"passed": gate.passed, "skipped": gate.skipped, "reasons": gate.reasons}
 
-    # 5) Score
+    # 5) Score — serve the candidate only if it passed the gate; otherwise AUTO-ROLLBACK to the
+    # last-good (gate-passed) champion so a failed model never reaches the dashboard.
+    serving_growth, serving_note = growth, "candidate"
+    if growth.model is not None and settings.gate_enabled and not gate.passed and not gate.skipped:
+        champ_model, champ_ver = registry.load_champion(wh, "growth", GrowthModel)
+        if champ_model is not None:
+            serving_growth, serving_note = champ_model, f"rolled-back to {champ_ver}"
+            log.warning("pipeline.auto_rollback", serving=champ_ver, reasons=gate.reasons)
+        else:
+            serving_note = "candidate (gate-failed; no prior champion to roll back to)"
+            log.warning("pipeline.gate_failed_no_rollback", reasons=gate.reasons)
+    model_metrics["growth"]["serving"] = serving_note
+
     t = time.time()
-    if growth.model is not None and not score_df.empty:
-        predictions = build_predictions(run_id, score_df, snap_df, risk_df, growth, risk)
+    if serving_growth.model is not None and not score_df.empty:
+        predictions = build_predictions(run_id, score_df, snap_df, risk_df, serving_growth, risk)
     else:
         predictions = pd.DataFrame()
     stages["score"] = round(time.time() - t, 1)
@@ -132,6 +160,17 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     }
     wh.insert_rows("backtest", [{"run_id": run_id, "created_at": datetime.now(UTC),
                                  "payload": backtest_payload}])
+
+    # 5d) Dogfood: audit OSS Radar's OWN dependencies and store the result (supply-chain self-check)
+    t = time.time()
+    try:
+        self_audit = audit_own_dependencies(settings, on_demand=True)
+        wh.insert_rows("self_audit", [{"run_id": run_id, "created_at": datetime.now(UTC),
+                                       "payload": self_audit}])
+        log.info("pipeline.self_audit", **self_audit.get("summary", {}))
+    except Exception as exc:  # noqa: BLE001 — never let the self-audit break the run
+        log.warning("pipeline.self_audit_failed", error=str(exc))
+    stages["self_audit"] = round(time.time() - t, 1)
 
     # 6) Agents
     t = time.time()

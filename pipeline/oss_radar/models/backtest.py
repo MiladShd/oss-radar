@@ -22,6 +22,8 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
+from oss_radar.features import GROWTH_TARGET_COLUMN
+
 # Kept in step with GrowthModel (self-contained so the harness never breaks on import).
 GROWTH_PARAMS = {
     "n_estimators": 500, "learning_rate": 0.03, "num_leaves": 31, "subsample": 0.8,
@@ -39,13 +41,13 @@ def _r(x):
 
 def growth_backtest(train_df: pd.DataFrame, features: list[str], params: dict | None = None,
                     seed: int = 42, frac: float = 0.8, scatter_n: int = 300) -> dict | None:
-    df = train_df.dropna(subset=["growth_target_7d"]).sort_values("feature_date")
-    df = df.assign(growth_target_7d=df["growth_target_7d"].clip(-0.9, 3.0))
+    df = train_df.dropna(subset=[GROWTH_TARGET_COLUMN]).sort_values("feature_date")
+    df = df.assign(**{GROWTH_TARGET_COLUMN: df[GROWTH_TARGET_COLUMN].clip(-0.9, 3.0)})
     feats = [f for f in features if f in df.columns]
     if len(df) < 50 or not feats:
         return None
     X = df[feats].astype(float)
-    y = df["growth_target_7d"].astype(float)
+    y = df[GROWTH_TARGET_COLUMN].astype(float)
     split = int(len(df) * frac)
     Xtr, Xte, ytr, yte = X.iloc[:split], X.iloc[split:], y.iloc[:split], y.iloc[split:]
 

@@ -4,7 +4,12 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
+from oss_radar.features import (
+    GROWTH_TARGET_COLUMN,
+    build_growth_scoring,
+    build_growth_training,
+    build_risk_frame,
+)
 
 
 def _synthetic_history(n_days=220, base=1000, growth=1.01):
@@ -19,13 +24,13 @@ def _synthetic_history(n_days=220, base=1000, growth=1.01):
 
 def test_growth_training_has_labels_and_features():
     hist = _synthetic_history()
-    train = build_growth_training(hist, horizon=7, stride=3, min_history=28)
+    train = build_growth_training(hist, horizon=70, stride=3, min_history=84)
     assert not train.empty
-    for col in ("log_d7", "velocity", "mom_7v7", "trend_slope_28", "growth_target_7d", "feature_date"):
+    for col in ("log_d7", "velocity", "mom_7v7", "trend_slope_28", GROWTH_TARGET_COLUMN, "feature_date"):
         assert col in train.columns
     # steady upward series => non-trivial positive momentum signal
     assert train["mom_7v7"].mean() > 0.9
-    assert train["growth_target_7d"].notna().all()
+    assert train[GROWTH_TARGET_COLUMN].notna().all()
 
 
 def test_growth_scoring_one_row_per_package():

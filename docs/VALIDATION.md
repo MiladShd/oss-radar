@@ -176,6 +176,11 @@ Their findings were then **re-verified in the harness** (`package_disjoint_cv`,
 `calibrated_persistence`, `head_reliability`) — every panel claim reproduced. This is the headline
 practice on display: *no metric is trusted until an independent process reproduces it.*
 
+A **third** independent reproduction lives in [`WOLFRAM_VALIDATION.md`](WOLFRAM_VALIDATION.md): a
+Wolfram Language cross-check (`pipeline/wolfram/validate_growth.wl`) that re-derives every statistic
+here from the dumped held-out predictions, step by step, and fails loudly if any deterministic number
+drifts from this harness by more than `1e-6`.
+
 ---
 
 ## 9. The one claim we stand behind

@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     backfill_days: int = 180
 
     # --- Model hyperparameters ---
-    growth_horizon_days: int = 14
+    growth_horizon_days: int = 70
     min_train_rows: int = 200
     random_seed: int = 42
 
@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     risk_horizon_days: int = 14  # snapshot span before risk switches to realized-outcome labels
     forward_min_rows: int = 25   # min realized-outcome rows before the model trusts them
     feature_lift_margin: float = 0.01  # min held-out Spearman lift to propose a new feature
+
+    # --- Validation gate (hard promotion/CI guard; see docs/VALIDATION.md + IMPROVEMENT.md) ---
+    # A retrained growth model is promoted to champion (served) ONLY if it clears these. The
+    # defaults pass the validated envelope (same-package R^2~0.58 / Spearman~0.79, unseen-package
+    # R^2~0.36 / Spearman~0.68) and fail the leak signatures (the retired centered-MA leak scored
+    # R^2~0.70; a shared-package leak blows out the same->unseen gap).
+    gate_enabled: bool = True
+    gate_min_spearman: float = 0.05            # held-out rank skill floor (beats chance)
+    gate_min_r2: float = 0.0                   # held-out R^2 must beat the mean predictor
+    gate_min_oof_spearman: float = 0.05        # unseen-package (GroupKFold) rank skill floor
+    gate_max_r2: float = 0.90                  # ceiling: implausibly high R^2 == a re-introduced leak
+    gate_max_generalization_gap: float = 0.40  # same-package R^2 minus unseen-package R^2
+    gate_cv_splits: int = 5
 
     @property
     def use_llm(self) -> bool:

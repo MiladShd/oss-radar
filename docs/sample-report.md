@@ -6,7 +6,7 @@ _Tracked 40 packages · growth model Spearman 0.097 · risk model AUC 0.576 · d
 
 ## 🚀 Top momentum movers
 
-| Package | Momentum | Pred 7d growth | Why |
+| Package | Momentum | Pred 70d growth | Why |
 |---|--:|--:|---|
 | `metagpt` | 60 | +14.2% | this week running above the monthly average, strong weekly download base, release staleness, maintainer key-person risk |
 | `e2b` | 60 | +13.9% | weekly downloads accelerating vs prior week, strong monthly download base, maintainer key-person risk, weak security posture |

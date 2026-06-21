@@ -23,6 +23,8 @@ jobs:
           pip install -r dashboard/requirements.txt httpx==0.28.1
       - name: Lint
         run: cd pipeline && ruff check oss_radar
+      - name: Validation gate (leak guard — blocks merge if the gate regresses)
+        run: pytest pipeline/tests/test_validation_gate.py -q
       - name: Test pipeline
         run: pytest pipeline/tests -q
       - name: Test dashboard

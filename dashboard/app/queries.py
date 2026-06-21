@@ -63,6 +63,16 @@ def _parse_reasons(val):
     return []
 
 
+def _normalize_growth_prediction(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    if "growth_pred_70d" not in df.columns and "growth_pred_7d" in df.columns:
+        df["growth_pred_70d"] = df["growth_pred_7d"]
+    elif "growth_pred_70d" in df.columns and "growth_pred_7d" in df.columns:
+        df["growth_pred_70d"] = df["growth_pred_70d"].combine_first(df["growth_pred_7d"])
+    return df
+
+
 def latest_predictions() -> pd.DataFrame:
     wh = _wh()
     preds = wh.query_df(
@@ -71,6 +81,7 @@ def latest_predictions() -> pd.DataFrame:
     )
     if preds.empty:
         return preds
+    preds = _normalize_growth_prediction(preds)
     snaps = wh.query_df(
         "SELECT name, repo, stars, forks, monthly_downloads, downloads_7d, dependent_repos_count, "
         "vuln_count, scorecard_overall, days_since_last_release, bus_factor, archived "
@@ -107,7 +118,7 @@ def all_packages() -> list[dict]:
     preds = latest_predictions()
     if preds.empty:
         return []
-    cols = ["name", "category", "repo", "momentum_score", "risk_score", "growth_pred_7d",
+    cols = ["name", "category", "repo", "momentum_score", "risk_score", "growth_pred_70d",
             "momentum_label", "risk_level", "top_reasons", "stars", "monthly_downloads",
             "dependent_repos_count", "vuln_count", "scorecard_overall"]
     cols = [c for c in cols if c in preds.columns]
@@ -145,6 +156,19 @@ def backtest() -> dict:
             payload = json.loads(payload)
         except Exception:  # noqa: BLE001
             return {}
+    return _clean(payload)
+
+
+def self_audit() -> dict:
+    df = _wh().query_df("SELECT payload FROM self_audit ORDER BY created_at DESC LIMIT 1")
+    if df.empty:
+        return {"summary": {}, "packages": []}
+    payload = df.iloc[0]["payload"]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:  # noqa: BLE001
+            return {"summary": {}, "packages": []}
     return _clean(payload)
 
 

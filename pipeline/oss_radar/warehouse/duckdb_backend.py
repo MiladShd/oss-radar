@@ -21,6 +21,10 @@ class DuckDBWarehouse(Warehouse):
         for table, cols in S.TABLES.items():
             coldefs = ", ".join(f'"{name}" {S.DUCKDB_TYPES[ctype]}' for name, ctype in cols)
             self._con.execute(f'CREATE TABLE IF NOT EXISTS "{table}" ({coldefs})')
+            existing = {row[1] for row in self._con.execute(f'PRAGMA table_info("{table}")').fetchall()}
+            for name, ctype in cols:
+                if name not in existing:
+                    self._con.execute(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {S.DUCKDB_TYPES[ctype]}')
         log.info("duckdb.schema_ready", path=self.path, tables=len(S.TABLES))
 
     def insert_rows(self, table: str, rows: list[dict]) -> int:
