@@ -20,6 +20,8 @@ retraining models, writing the daily brief, and opening a pull request.
 
 ![OSS Radar dashboard](docs/dashboard.png)
 
+**📄 [See a sample run →](docs/sample-report.md)** — real, unedited pipeline output (momentum & risk movers, held-out model metrics, source coverage, and what the agent crew did), no setup required.
+
 ---
 
 ## Why it exists
