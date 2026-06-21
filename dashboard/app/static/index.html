@@ -144,6 +144,7 @@ tr.row:hover td{background:var(--panel2)}
       <button data-tab="packages">Packages</button>
       <button data-tab="models">Model history</button>
       <button data-tab="accuracy">Accuracy</button>
+      <button data-tab="validation">Validation</button>
       <button data-tab="agents">Agent activity</button>
     </nav>
     <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
@@ -208,8 +209,10 @@ tr.row:hover td{background:var(--panel2)}
   <!-- ACCURACY -->
   <section data-view="accuracy" hidden>
     <div class="hero"><h1 style="font-size:22px">Model accuracy — predicted vs reality</h1>
-      <p>The growth model graded on a <b>time-aware held-out test</b> (train on earlier dates, predict later
-         unseen package-days), recomputed every run. Treat the scores as a ranked watchlist, not a magnitude forecast.</p></div>
+      <p>The growth model graded on a <b>time-aware held-out test</b>, recomputed every run. This is a
+         <b>cross-sectional ranking</b> — Spearman is the metric that matters; the absolute R² is leak-sensitive. See the
+         <a href="#" onclick="tab('validation');return false" style="color:var(--teal)">Validation</a> tab for the
+         honest, leak-free numbers and confidence intervals.</p></div>
     <div class="kpis" id="btkpis"></div>
     <div class="panel"><h3>Calibration — predicted-growth decile vs realized</h3>
       <div class="sub">Bars = what actually happened · line = what the model predicted. Bars rising left→right means the ranking holds.</div>
@@ -221,6 +224,24 @@ tr.row:hover td{background:var(--panel2)}
       <div class="panel"><h3>Risk model ROC</h3>
         <div class="sub" id="btRocSub">true-positive vs false-positive rate</div>
         <div style="height:240px;position:relative"><canvas id="btRoc"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- VALIDATION -->
+  <section data-view="validation" hidden>
+    <div class="hero"><h1 style="font-size:22px">Validation — does the R² claim survive scrutiny?</h1>
+      <p>A statistical harness plus a 12-agent LLM statistician panel stress-tested the headline and found two data
+         leaks and a strawman baseline. Honest verdict: a <b>cross-sectional ranked momentum watchlist</b>, not a
+         time-forward forecast. <a id="valdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Full report →</a></p></div>
+    <div class="kpis" id="valkpis"></div>
+    <div class="panel"><h3>The number, at four levels of honesty</h3>
+      <div class="sub">Each leak or strawman removed lowers the held-out R². The honest skill is the unseen-package bar.</div>
+      <div style="height:240px;position:relative"><canvas id="valHier"></canvas></div></div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="panel"><h3>Why it's cross-sectional, not a forecast</h3>
+        <div class="sub" id="valCaveat">…</div></div>
+      <div class="panel"><h3>How we know — no number trusted until reproduced</h3>
+        <div class="sub" id="valMethod">…</div></div>
     </div>
   </section>
 
@@ -255,6 +276,7 @@ function tab(name){
   if(name==="packages"&&!PKGS.length) loadPackages();
   if(name==="models") loadModels();
   if(name==="accuracy") loadBacktest();
+  if(name==="validation") loadValidation();
   if(name==="agents") loadAgents();
 }
 $$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
@@ -420,6 +442,45 @@ async function loadBacktest(){
   } else if($("#btRocSub")){ $("#btRocSub").textContent="insufficient at-risk samples yet"; }
 }
 
+let valChart=null;
+async function loadValidation(){
+  const d=await (await fetch("/static/validation.json")).json();
+  const lk=d.leak_quantification, b=d.baselines, pd=d.package_disjoint_cv,
+        cb=d.cluster_bootstrap, od=d.origin_diagnostics, hr=d.head_reliability;
+  const f2=x=>x==null?"—":(+x).toFixed(2);
+  $("#valkpis").innerHTML=[
+    ["unseen-pkg Spearman", f2(pd.spearman)],
+    ["honest R²", f2(pd.r2)],
+    ["R² lost to leaks", "−"+f2(lk.centered_leaky.r2-pd.r2)],
+    ["significance", "p<0.001"],
+    ["independent forecasts", od.independent_forecasts_in_time_approx],
+  ].map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const rows=[
+    ["centered (leaky)", lk.centered_leaky.r2, "#ff5c6c"],
+    ["causal · same pkgs", lk.causal_trailing.r2, "#ffb347"],
+    ["unseen pkgs (honest)", pd.r2, "#2ee6c4"],
+    ["fair baseline", b.persistence_calibrated_fair.r2, "#7d93a3"],
+  ];
+  if(valChart) valChart.destroy();
+  valChart=new Chart($("#valHier"),{type:"bar",
+    data:{labels:rows.map(r=>r[0]),datasets:[{data:rows.map(r=>r[1]),backgroundColor:rows.map(r=>r[2]),borderRadius:4}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>"R² = "+c.parsed.x.toFixed(3)}}},
+      scales:{x:{min:0,max:0.8,title:{display:true,text:"held-out R²",color:"#7d93a3"},
+        ticks:{color:"#7d93a3",font:{family:"IBM Plex Mono",size:10}},grid:{color:"#16212c"}},
+        y:{ticks:{color:"#cfe0ea",font:{family:"IBM Plex Mono",size:11}},grid:{display:false}}}}});
+  $("#valCaveat").innerHTML=`${od.verdict}<br><br><b>${od.n_distinct_origins}</b> origins span
+    <b>${od.origin_span_days} days</b> &lt; the 70-day horizon → ~<b>${od.independent_forecasts_in_time_approx}</b>
+    independent forecasts in time; within-package skill is unmeasurable. The head of the list is least reliable:
+    top-10 overlap with real movers is <b>${hr.top10_overlap}/10</b>, predictions range-compressed
+    (slope ${f2(hr.pred_vs_actual_slope)}).`;
+  $("#valMethod").innerHTML=`Bootstrap (resampling whole packages) 95% CI: R² [${cb.r2_ci.map(f2).join(", ")}],
+    Spearman [${cb.spearman_ci.map(f2).join(", ")}]; permutation p<0.001.<br><br>A 12-agent LLM statistician panel
+    adversarially audited the harness — it found the shared-package leak and the strawman baseline — then 3 agents
+    reproduced every leak-free number from raw data to full float precision. The model beats a fairly-calibrated
+    baseline (Spearman ${f2(b.persistence_calibrated_fair.spearman)}) on ranking.`;
+  $("#valdoc").href="https://github.com/MiladShd/oss-radar/blob/main/docs/VALIDATION.md";
+}
 async function loadAgents(){
   const acts=await j("/api/agents");
   const byDay={};
