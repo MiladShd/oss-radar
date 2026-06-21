@@ -13,6 +13,7 @@ vulns actually affect that version (the real exposure), instead of the package's
 """
 from __future__ import annotations
 
+import pathlib
 import re
 import tomllib
 
@@ -166,6 +167,29 @@ def _trends_for_known(wh, exact_names: list[str]) -> dict[str, float | None]:
     for name, g in df.sort_values("date").groupby("name"):
         out[_norm(name)] = _trend_pct([float(x) for x in g["downloads"]])
     return out
+
+
+def own_dependencies() -> list[tuple[str, str | None]]:
+    """OSS Radar's own pinned dependencies (pipeline + dashboard requirements.txt) — for dogfooding."""
+    base = pathlib.Path(__file__).resolve().parents
+    candidates = [base[2] / "requirements.txt", base[3] / "dashboard" / "requirements.txt"]
+    deps: list[tuple[str, str | None]] = []
+    for p in candidates:
+        try:
+            deps += parse_requirements(p.read_text())
+        except Exception:
+            continue
+    seen, out = set(), []
+    for n, v in deps:
+        if n not in seen:
+            seen.add(n)
+            out.append((n, v))
+    return out
+
+
+def audit_own_dependencies(settings=None, on_demand: bool = True) -> dict:
+    """Audit OSS Radar's own supply chain (used by the daily pipeline to dogfood the auditor)."""
+    return audit_packages(own_dependencies(), settings=settings, on_demand=on_demand)
 
 
 def audit_packages(deps, settings=None, on_demand: bool = True, max_on_demand: int = 40) -> dict:

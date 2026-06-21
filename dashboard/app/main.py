@@ -90,6 +90,11 @@ async def api_audit(request: Request):
     return JSONResponse(out)
 
 
+@app.get("/api/self-audit")
+def api_self_audit():
+    return JSONResponse(_safe(queries.self_audit, {"summary": {}, "packages": []}))
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")

@@ -281,7 +281,7 @@ langchain
 fastapi==0.100.0
 numpy
 or: openai/openai-python" style="width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:11px;border-radius:10px;outline:none;resize:vertical"></textarea>
-        <div style="margin-top:10px"><button id="auditRun" style="font-family:var(--mono);font-size:13px;color:#06281f;background:var(--teal);border:none;padding:10px 16px;border-radius:9px;cursor:pointer;font-weight:600">Run audit</button>
+        <div style="margin-top:10px"><button id="auditRun" style="font-family:var(--mono);font-size:13px;color:#06281f;background:var(--teal);border:none;padding:10px 16px;border-radius:9px;cursor:pointer;font-weight:600">Run audit</button> <button id="auditSelf" style="font-family:var(--mono);font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--line2);padding:10px 14px;border-radius:9px;cursor:pointer">Audit this project</button>
         <span id="auditNote" class="sub" style="margin-left:10px"></span></div></div>
       <div class="panel"><h3>Summary</h3><div id="auditSummary" class="sub">Paste your dependencies and run an audit.</div></div>
     </div>
@@ -325,6 +325,7 @@ function tab(name){
 }
 $$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 const _ar=$("#auditRun"); if(_ar) _ar.onclick=runAudit;
+const _as=$("#auditSelf"); if(_as) _as.onclick=selfAudit;
 
 function moverRow(p,scoreKey,colorFn,levelKey){
   const v=p[scoreKey]??0, lvl=p[levelKey]||"";
@@ -580,15 +581,7 @@ async function loadTimeseries(){
     An honest limit, not a bug.`;
   $("#tsdoc").href="https://github.com/MiladShd/oss-radar/blob/main/pipeline/scripts/timeseries_analysis.py";
 }
-async function runAudit(){
-  const txt=($("#auditIn").value||"").trim();
-  if(!txt){$("#auditNote").textContent="paste some packages first";return;}
-  const btn=$("#auditRun"); btn.disabled=true; $("#auditNote").textContent="auditing\u2026 (fetching live data for unknown packages)";
-  try{
-    const oneLine=!txt.includes("\n");  /* _auditRepoDetect */
-    const isRepo=oneLine&&(txt.includes("github.com")||(txt.split("/").filter(Boolean).length===2&&!/[ =<>]/.test(txt)));
-    const payload=isRepo?{repo:txt.trim()}:{requirements:txt};
-    const d=await (await fetch("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})).json();
+function renderAudit(d){
     const s=d.summary||{};
     const chip=(label,n,col)=>n?`<span class="badge" style="margin-right:6px;background:${col};color:#06281f">${n} ${label}</span>`:"";
     $("#auditSummary").innerHTML=`<div style="font-size:15px;color:var(--ink);margin-bottom:10px">${s.audited||0} of ${s.total||0} audited</div>`+
@@ -606,6 +599,23 @@ async function runAudit(){
         `<tr><td colspan="6" class="sub" style="padding:0 10px 10px;border:none">${r.reason}</td></tr>`;
     }).join("");
     $("#auditResults").innerHTML=`<table><thead><tr><th>package</th><th>verdict</th><th>risk</th><th>vulns</th><th>last release</th><th>trend</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function selfAudit(){
+  $("#auditNote").textContent="loading OSS Radar's stored self-audit\u2026";
+  try{ const d=await (await fetch("/api/self-audit")).json(); renderAudit(d);
+    $("#auditNote").textContent="OSS Radar's own dependencies \u00b7 stored each run"; }
+  catch(e){ $("#auditNote").textContent="no stored self-audit yet"; }
+}
+async function runAudit(){
+  const txt=($("#auditIn").value||"").trim();
+  if(!txt){$("#auditNote").textContent="paste some packages first";return;}
+  const btn=$("#auditRun"); btn.disabled=true; $("#auditNote").textContent="auditing\u2026 (fetching live data for unknown packages)";
+  try{
+    const oneLine=!txt.includes("\n");  /* _auditRepoDetect */
+    const isRepo=oneLine&&(txt.includes("github.com")||(txt.split("/").filter(Boolean).length===2&&!/[ =<>]/.test(txt)));
+    const payload=isRepo?{repo:txt.trim()}:{requirements:txt};
+    const d=await (await fetch("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})).json();
+    renderAudit(d);
     $("#auditNote").textContent=d.source?("source: "+d.source):"";
   }catch(e){$("#auditNote").textContent="audit failed: "+e.message;}
   btn.disabled=false;
