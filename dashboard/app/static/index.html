@@ -213,7 +213,7 @@ tr.row:hover td{background:var(--panel2)}
     <div class="kpis" id="btkpis"></div>
     <div class="panel"><h3>Calibration — predicted-growth decile vs realized</h3>
       <div class="sub">Bars = what actually happened · line = what the model predicted. Bars rising left→right means the ranking holds.</div>
-      <canvas id="btCalib" height="110"></canvas></div>
+      <canvas id="btCalib" height="150"></canvas></div>
     <div class="grid2" style="margin-top:18px">
       <div class="panel"><h3>Predicted vs actual</h3>
         <div class="sub">each point = one held-out package-day · dashed line = perfect prediction</div>
@@ -398,15 +398,19 @@ async function loadBacktest(){
   $("#btkpis").innerHTML=[["spearman",m.spearman],["MAE",m.mae],["RMSE",m.rmse],["R\u00b2",m.r2],["test rows",m.n_test]]
     .map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v==null?"\u2014":v}</div></div>`).join("");
   const cal=g.calibration||[];
+  const cv=cal.flatMap(c=>[c.actual,c.pred]).filter(v=>v!=null);
+  const cmin=cv.length?Math.min(...cv):-0.1, cmax=cv.length?Math.max(...cv):0.1, cpad=((cmax-cmin)*0.12)||0.05;
   btCharts.push(new Chart($("#btCalib"),{data:{labels:cal.map(c=>c.decile),datasets:[
     {type:"bar",label:"actual",data:cal.map(c=>c.actual),backgroundColor:"#ffb347",borderRadius:3,order:2},
     {type:"line",label:"predicted",data:cal.map(c=>c.pred),borderColor:"#2ee6c4",pointStyle:"rectRot",pointRadius:3,borderWidth:2,tension:.2,order:1}
-  ]},options:axes("predicted-growth decile","7-day growth")}));
-  const sc=g.scatter||[], lo=-0.05, hi=0.12;
+  ]},options:axes("predicted-growth decile","realized log-growth",null,null,cmin-cpad,cmax+cpad)}));
+  const sc=g.scatter||[];
+  const sv=sc.flatMap(p=>[p[0],p[1]]);
+  const lo=sv.length?Math.min(...sv):-0.5, hi=sv.length?Math.max(...sv):1.0;
   btCharts.push(new Chart($("#btScatter"),{data:{datasets:[
     {type:"scatter",data:sc.map(p=>({x:p[0],y:p[1]})),backgroundColor:"rgba(46,230,196,0.45)",pointRadius:3},
     {type:"line",data:[{x:lo,y:lo},{x:hi,y:hi}],borderColor:"#7d93a3",borderDash:[6,4],borderWidth:1.5,pointRadius:0}
-  ]},options:axes("predicted","actual",lo,hi,-0.5,1.0)}));
+  ]},options:axes("predicted","actual",lo,hi,lo,hi)}));
   if(r&&r.points&&r.points.length){
     $("#btRocSub").textContent=`AUC ${r.auc==null?"n/a":r.auc} \u00b7 n=${r.n}, ${r.n_pos} at-risk`;
     btCharts.push(new Chart($("#btRoc"),{data:{datasets:[
