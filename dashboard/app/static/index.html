@@ -145,6 +145,7 @@ tr.row:hover td{background:var(--panel2)}
       <button data-tab="models">Model history</button>
       <button data-tab="accuracy">Accuracy</button>
       <button data-tab="validation">Validation</button>
+      <button data-tab="timeseries" style="display:none">Time series</button>
       <button data-tab="agents">Agent activity</button>
     </nav>
     <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
@@ -245,6 +246,26 @@ tr.row:hover td{background:var(--panel2)}
     </div>
   </section>
 
+  <!-- TIME SERIES (nav hidden until validated) -->
+  <section data-view="timeseries" hidden>
+    <div class="hero"><h1 style="font-size:22px">Time-series analysis — the daily series, by the book</h1>
+      <p>Unlike the cross-sectional growth model, the <b>daily download series</b> supports proper time-series work:
+         every assumption is hypothesis-tested, and short-horizon forecasts are <b>rolling-origin validated</b>.
+         <a id="tsdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Harness →</a></p></div>
+    <div class="kpis" id="tskpis"></div>
+    <div class="panel"><h3>Assumption tests (91 series)</h3>
+      <div class="sub">Each property is hypothesis-tested. The series violate iid/stationarity — which is exactly why
+        differencing and a seasonal model are required.</div>
+      <div id="tsDiag" style="margin-top:10px"></div></div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="panel"><h3>Forecast accuracy — MASE (lower is better; 1.0 = no better than naive)</h3>
+        <div class="sub">Rolling-origin, expanding window, top 12 packages. ETS beats the baselines at 1 day; 7 days is far harder.</div>
+        <div style="height:240px;position:relative"><canvas id="tsMase"></canvas></div></div>
+      <div class="panel"><h3>Is the model adequate?</h3>
+        <div class="sub" id="tsResid">…</div></div>
+    </div>
+  </section>
+
   <!-- AGENTS -->
   <section data-view="agents" hidden>
     <div class="hero"><h1 style="font-size:22px">What the AI agents did</h1>
@@ -277,6 +298,7 @@ function tab(name){
   if(name==="models") loadModels();
   if(name==="accuracy") loadBacktest();
   if(name==="validation") loadValidation();
+  if(name==="timeseries") loadTimeseries();
   if(name==="agents") loadAgents();
 }
 $$("nav.tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
@@ -480,6 +502,52 @@ async function loadValidation(){
     reproduced every leak-free number from raw data to full float precision. The model beats a fairly-calibrated
     baseline (Spearman ${f2(b.persistence_calibrated_fair.spearman)}) on ranking.`;
   $("#valdoc").href="https://github.com/MiladShd/oss-radar/blob/main/docs/VALIDATION.md";
+}
+let tsChart=null;
+async function loadTimeseries(){
+  const d=await (await fetch("/static/timeseries.json")).json();
+  const ds=d.diagnostics_summary, fs=d.forecast_summary, fp=d.forecast_per_package;
+  const pct=x=>Math.round(x*100)+"%";
+  $("#tskpis").innerHTML=[
+    ["series non-stationary", pct(1-ds.level_stationary_frac)],
+    ["weekly-seasonal", pct(ds.weekly_seasonal_frac)],
+    ["ETS 1-day MASE", fs.median_mase_ets_h1],
+    ["beats naive @1", pct(fs.ets_beats_seasonal_naive_h1_frac)],
+    ["residuals white-noise", pct(fs.ets_residuals_white_noise_frac)],
+  ].map(([k,v])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const io=ds.integration_order_counts||{};
+  const rows=[
+    ["Stationarity (ADF + KPSS)", pct(ds.level_stationary_frac)+" stationary in level", "✗ non-stationary"],
+    ["Integration order", `I(1): ${io["I(1)"]||0} · I(0): ${io["I(0)"]||0} · I(2)+: ${io["I(2)+"]||0}`, "→ difference once"],
+    ["Autocorrelation (Ljung-Box)", pct(ds.autocorrelated_frac)+" autocorrelated", "✗ not white noise"],
+    ["Weekly seasonality (STL)", pct(ds.weekly_seasonal_frac)+" seasonal · strength "+(+ds.median_seasonal_strength).toFixed(2), "✓ strong weekly"],
+    ["Heteroscedasticity (ARCH)", pct(ds.heteroscedastic_frac)+" heteroscedastic", "✗ volatility clusters"],
+    ["Normality of Δ (Jarque-Bera)", pct(ds.nonnormal_diff_frac)+" non-normal", "✗ heavy tails"],
+  ];
+  $("#tsDiag").innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12.5px">${
+    rows.map(r=>`<tr style="border-top:1px solid var(--line)">
+      <td style="padding:7px 8px;color:var(--ink)">${r[0]}</td>
+      <td style="padding:7px 8px;color:var(--muted);font-family:var(--mono)">${r[1]}</td>
+      <td style="padding:7px 8px;color:var(--muted)">${r[2]}</td></tr>`).join("")}</table>`;
+  const med=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+  const mase=(model,h)=>med(fp.map(r=>r.mase[model]["h"+h]));
+  const models=["naive","seasonal_naive","ets"], labels=["naive","seasonal-naive","ETS"];
+  if(tsChart) tsChart.destroy();
+  tsChart=new Chart($("#tsMase"),{type:"bar",
+    data:{labels, datasets:[
+      {label:"1-day ahead", data:models.map(m=>mase(m,1)), backgroundColor:"#2ee6c4", borderRadius:3},
+      {label:"7-day ahead", data:models.map(m=>mase(m,7)), backgroundColor:"#ffb347", borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:"#cfe0ea",boxWidth:12}}},
+      scales:{y:{title:{display:true,text:"MASE",color:"#7d93a3"},ticks:{color:"#7d93a3"},grid:{color:"#16212c"}},
+              x:{ticks:{color:"#cfe0ea",font:{family:"IBM Plex Mono"}},grid:{display:false}}}}});
+  $("#tsResid").innerHTML=`A model is <b>adequate</b> when its forecast errors are white noise — no structure
+    left to exploit. ETS 1-step residuals pass the Ljung-Box white-noise test in
+    <b>${pct(fs.ets_residuals_white_noise_frac)}</b> of packages, and ETS beats seasonal-naive at 1 day in
+    <b>${pct(fs.ets_beats_seasonal_naive_h1_frac)}</b> (Diebold-Mariano p ≈ 1e-6).<br><br>
+    At 7 days ahead, ETS MASE ${fs.median_mase_ets_h7} ≈ seasonal-naive ${fs.median_mase_seasonal_naive_h7}:
+    the weekly cycle is predictable, but genuine multi-day forecasting is hard — an honest limit, not a bug.`;
+  $("#tsdoc").href="https://github.com/MiladShd/oss-radar/blob/main/pipeline/scripts/timeseries_analysis.py";
 }
 async function loadAgents(){
   const acts=await j("/api/agents");
