@@ -1,0 +1,106 @@
+name: OSS Radar Auto Triage
+
+on:
+  workflow_run:
+    workflows: ["CI", "PR Preview", "CodeQL"]
+    types: [completed]
+  schedule:
+    - cron: "10 10 * * *"  # catch any daily report PR after the 09:30 UTC pipeline
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+
+concurrency:
+  group: oss-radar-auto-triage
+  cancel-in-progress: false
+
+jobs:
+  merge-daily-reports:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Merge eligible daily report PRs
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          repo = os.environ["REPO"]
+
+          def gh(*args: str) -> str:
+              return subprocess.check_output(["gh", *args], text=True)
+
+          def checks_green(checks: list[dict]) -> tuple[bool, str]:
+              if not checks:
+                  return False, "no checks reported yet"
+              bad = []
+              for check in checks:
+                  name = check.get("name") or check.get("context") or "check"
+                  status = check.get("status") or check.get("state")
+                  conclusion = check.get("conclusion") or check.get("state")
+                  if status in (None, "COMPLETED", "SUCCESS") and conclusion in (
+                      "SUCCESS", "SKIPPED", "NEUTRAL"
+                  ):
+                      continue
+                  bad.append(f"{name}:{status}/{conclusion}")
+              return not bad, ", ".join(bad)
+
+          prs = json.loads(gh(
+              "pr", "list", "--repo", repo, "--state", "open",
+              "--json", "number,title,headRefName,baseRefName,isDraft,labels",
+          ))
+          merged = []
+          skipped = []
+          for pr in prs:
+              number = str(pr["number"])
+              labels = {label["name"] for label in pr.get("labels", [])}
+              if not {"oss-radar", "automated"}.issubset(labels):
+                  continue
+              if not pr["title"].startswith("OSS Radar daily brief"):
+                  continue
+              if pr.get("isDraft"):
+                  skipped.append((number, "draft"))
+                  continue
+              if pr.get("baseRefName") != "main":
+                  skipped.append((number, "base is not main"))
+                  continue
+              if not re.fullmatch(r"oss-radar/daily-\d{4}-\d{2}-\d{2}", pr.get("headRefName") or ""):
+                  skipped.append((number, "head branch is not a daily report branch"))
+                  continue
+
+              detail = json.loads(gh(
+                  "pr", "view", number, "--repo", repo,
+                  "--json", "files,statusCheckRollup,mergeable",
+              ))
+              files = [f["path"] for f in detail.get("files", [])]
+              if len(files) != 1 or not re.fullmatch(r"reports/\d{4}-\d{2}-\d{2}\.md", files[0]):
+                  skipped.append((number, f"unexpected files: {files}"))
+                  continue
+              if detail.get("mergeable") == "CONFLICTING":
+                  skipped.append((number, "merge conflict"))
+                  continue
+              ok, reason = checks_green(detail.get("statusCheckRollup") or [])
+              if not ok:
+                  skipped.append((number, reason))
+                  continue
+
+              subprocess.run([
+                  "gh", "pr", "merge", number, "--repo", repo, "--squash", "--delete-branch",
+              ], check=True)
+              merged.append(number)
+
+          print("merged:", ", ".join(merged) if merged else "none")
+          if skipped:
+              print("skipped:")
+              for number, reason in skipped:
+                  print(f"- #{number}: {reason}")
+          PY

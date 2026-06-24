@@ -34,6 +34,51 @@ def open_issue(token: str, repo_full: str, title: str, body: str,
         return None
 
 
+def open_or_comment_issue(
+    token: str,
+    repo_full: str,
+    title: str,
+    body: str,
+    labels: list[str] | None = None,
+) -> str | None:
+    """Create an issue, or append to the matching open issue instead of duplicating it."""
+    repo = _repo(token, repo_full)
+    if not repo:
+        return None
+    try:
+        issue_labels = labels or []
+        for issue in repo.get_issues(state="open", labels=issue_labels):
+            if issue.title == title:
+                issue.create_comment(body)
+                return issue.html_url
+        issue = repo.create_issue(title=title, body=body, labels=issue_labels)
+        return issue.html_url
+    except Exception as exc:  # noqa: BLE001
+        log.warning("github.issue_upsert_failed", error=str(exc))
+        return None
+
+
+def close_open_issues(
+    token: str,
+    repo_full: str,
+    labels: list[str],
+    comment: str,
+) -> list[str]:
+    """Close open issues matching all labels, adding a final audit comment."""
+    repo = _repo(token, repo_full)
+    if not repo:
+        return []
+    closed = []
+    try:
+        for issue in repo.get_issues(state="open", labels=labels):
+            issue.create_comment(comment)
+            issue.edit(state="closed")
+            closed.append(issue.html_url)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("github.issue_close_failed", error=str(exc))
+    return closed
+
+
 def open_daily_pr(token: str, repo_full: str, branch: str, report_path: str,
                   report_md: str, title: str, body: str) -> str | None:
     """Create/refresh a branch with the daily report and open (or reuse) a PR."""
