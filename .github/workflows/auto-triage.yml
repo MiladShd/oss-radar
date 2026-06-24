@@ -39,6 +39,14 @@ jobs:
           def gh(*args: str) -> str:
               return subprocess.check_output(["gh", *args], text=True)
 
+          def gh_try(*args: str) -> tuple[bool, str]:
+              try:
+                  return True, subprocess.check_output(
+                      ["gh", *args], stderr=subprocess.STDOUT, text=True
+                  )
+              except subprocess.CalledProcessError as exc:
+                  return False, exc.output.strip()
+
           def checks_green(checks: list[dict]) -> tuple[bool, str]:
               if not checks:
                   return False, "no checks reported yet"
@@ -79,7 +87,7 @@ jobs:
 
               detail = json.loads(gh(
                   "pr", "view", number, "--repo", repo,
-                  "--json", "files,statusCheckRollup,mergeable",
+                  "--json", "files,statusCheckRollup,mergeable,autoMergeRequest,mergeStateStatus",
               ))
               files = [f["path"] for f in detail.get("files", [])]
               if len(files) != 1 or not re.fullmatch(r"reports/\d{4}-\d{2}-\d{2}\.md", files[0]):
@@ -92,10 +100,18 @@ jobs:
               if not ok:
                   skipped.append((number, reason))
                   continue
+              if detail.get("autoMergeRequest"):
+                  skipped.append((number, "auto-merge already enabled"))
+                  continue
 
-              subprocess.run([
-                  "gh", "pr", "merge", number, "--repo", repo, "--squash", "--delete-branch",
-              ], check=True)
+              ok, output = gh_try(
+                  "pr", "merge", number, "--repo", repo,
+                  "--squash", "--delete-branch", "--auto",
+              )
+              if not ok:
+                  state = detail.get("mergeStateStatus") or "unknown"
+                  skipped.append((number, f"merge request failed ({state}): {output}"))
+                  continue
               merged.append(number)
 
           print("merged:", ", ".join(merged) if merged else "none")
