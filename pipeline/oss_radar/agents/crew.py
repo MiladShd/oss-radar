@@ -128,13 +128,23 @@ def _model_monitor(ctx: AgentContext, drift: dict | None) -> None:
         ctx.record("DataScientist", "recommend_action", "warning",
                    "Significant drift — flagged for feature review; next run will retrain from scratch.")
         if not ctx.dry_run and ctx.settings.github_token:
-            url = github_ops.open_issue(
+            issue_body = summary + "\n\nRecommend reviewing input features and confirming the retrain."
+            url = github_ops.open_or_comment_issue(
                 ctx.settings.github_token, ctx.settings.github_repo,
                 title=f"[oss-radar] Prediction drift detected ({sev})",
-                body=summary + "\n\nRecommend reviewing input features and confirming the retrain.",
+                body=issue_body,
                 labels=["oss-radar", "model-drift"])
             if url:
-                ctx.record("DataScientist", "open_issue", "ok", "Opened drift investigation issue.", url)
+                ctx.record("DataScientist", "track_issue", "ok", "Tracked drift investigation issue.", url)
+    elif sev == "low" and not ctx.dry_run and ctx.settings.github_token:
+        closed = github_ops.close_open_issues(
+            ctx.settings.github_token, ctx.settings.github_repo,
+            labels=["oss-radar", "model-drift"],
+            comment=summary + "\n\nDrift has returned to the low band; closing this investigation.",
+        )
+        if closed:
+            ctx.record("DataScientist", "close_issue", "ok",
+                       f"Closed {len(closed)} recovered drift issue(s).", closed[0])
 
 
 # --- Risk Analyst: the daily human-readable report ---
