@@ -186,7 +186,7 @@ validate_state_file() {
 }
 
 backup_local_state() {
-  [[ -s "$LOCAL_STATE" ]] || return
+  [[ -s "$LOCAL_STATE" ]] || return 0
   mkdir -p "$STATE_BACKUP_DIR"
   local stamp backup_path
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
