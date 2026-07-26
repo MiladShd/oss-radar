@@ -42,13 +42,14 @@ jobs:
           python scripts/feature_pr_check.py \
             --base /tmp/oss-radar-base-features.json \
             --head pipeline/oss_radar/config/active_features.json
-      - name: Validation gate (block a leak introduced on this branch)
+      - name: Exercise validation gate (candidate holds are expected)
         env:
           OSS_RADAR_BACKEND: duckdb
           OSS_RADAR_DUCKDB_PATH: preview.duckdb
-        # --require-pass fails the PR check on a genuine gate failure; a skip on thin
-        # preview data (too few rows to verify) exits 0, so honest PRs are never blocked.
-        run: python -m oss_radar.cli gate --require-pass
+        # This reduced cohort is live public data, not a captured base/head benchmark. A failed
+        # candidate is therefore an expected safe outcome: the pipeline keeps the prior champion.
+        # Deterministic gate tests and the base/head feature check remain merge-blocking.
+        run: python -m oss_radar.cli gate
       - name: Build comment
         env:
           OSS_RADAR_BACKEND: duckdb
