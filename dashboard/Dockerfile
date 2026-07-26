@@ -1,12 +1,14 @@
 # Dashboard image — FastAPI read-only API + SPA (Cloud Run Service, scales to zero).
 FROM python:3.12-slim
 
+ARG GIT_SHA=unknown
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     OSS_RADAR_BACKEND=bigquery \
     OSS_RADAR_ENV=cloud \
-    PORT=8080
+    PORT=8080 \
+    GIT_SHA=${GIT_SHA}
 
 WORKDIR /app
 COPY dashboard/requirements.txt /app/dashboard/requirements.txt

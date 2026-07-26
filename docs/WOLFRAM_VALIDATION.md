@@ -46,8 +46,9 @@ Statements 1–7b and 8 are **deterministic** and asserted to `<1e-6`. Statement
 Wolfram's RNG differs from NumPy's, so they are reported as **method demonstrations + consistency
 bands** (same conclusion: p<0.001, CI excludes 0), never as exact-match assertions.
 
-> The retired **0.74 / 0.70** headline was a centered-MA *lookahead leak*. The honest numbers are
-> **0.582 same-package** and **0.363 package-disjoint** — see [`VALIDATION.md`](VALIDATION.md) §1–2.
+> The retired historical **0.740** headline is not the controlled ablation. The current harness reproduces
+> centered-MA **0.702 → 0.582 causal → 0.363 package-disjoint** — see
+> [`VALIDATION.md`](VALIDATION.md) §1–2.
 
 ### Why two extra dumps?
 
@@ -120,19 +121,21 @@ Wolfram Engine in a headless container needs a paid on-demand **entitlement**
 - Terraform provisions `oss-radar-validate-daily` (see [`main.tf`](../infra/terraform/main.tf)), which
   triggers the existing Cloud Run job with an args override → `python -m oss_radar.cli validate
   --upload`. It regenerates `validation_results.json` + the three dumps from BigQuery and uploads them
-  to `gs://<bucket>/validation/`. Schedule: `var.validate_schedule` (default `30 10 * * *` UTC, after
-  the 09:30 pipeline run).
+  directly to the Terraform-owned `gs://<bucket>/validation/` path. An explicit upload failure exits
+  nonzero instead of leaving a falsely successful stale run. Schedule: `var.validate_schedule`
+  (default `30 10 * * *` UTC, after the 09:30 pipeline run).
 - The `validate` command also runs a **staleness guard**: it reads `wolfram_freshness.json` from GCS and
   emits a structured-log warning (`validate.wolfram_stale`) if the local Wolfram cross-check is older
   than `--staleness-hours` (default 36 h). Wire that log metric to an alert if you want a page.
 
-So even if the local Mac is off for a week, the **authoritative numbers stay fresh in the cloud**; the
-Wolfram step-by-step report is the local educational layer that resumes the next time the Mac runs.
+So even if the local Mac is off for a week, a successful scheduled validation keeps the authoritative numbers
+fresh in the cloud; verify the execution succeeded and emitted `validate.uploaded`. The Wolfram step-by-step
+report is the local educational layer that resumes the next time the Mac runs.
 
 ```bash
 # run the cloud-equivalent locally (needs a populated warehouse):
-python -m oss_radar.cli validate --out /tmp/validation            # regenerate only
-python -m oss_radar.cli validate --upload                          # + push to GCS
+.venv/bin/python -m oss_radar.cli validate --out /tmp/validation  # regenerate only
+.venv/bin/python -m oss_radar.cli validate --upload                # + required GCS upload
 # trigger the cloud job by hand:
 gcloud run jobs execute oss-radar-pipeline --region us-central1 \
   --args=validate,--upload --wait

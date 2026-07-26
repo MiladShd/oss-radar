@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
 from oss_radar.models.scoring import build_predictions
 from oss_radar.models.validation_gate import GateResult, growth_gate
-from oss_radar.registry import ModelRegistry
+from oss_radar.registry import ModelRegistry, evaluation_lineage_matches
 from oss_radar.warehouse import get_warehouse
 
 log = structlog.get_logger(__name__)
@@ -31,39 +32,116 @@ log = structlog.get_logger(__name__)
 
 def _git_sha() -> str:
     if os.environ.get("GIT_SHA"):
-        return os.environ["GIT_SHA"][:12]
+        return os.environ["GIT_SHA"]
     try:
         import subprocess
 
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+        return subprocess.check_output(["git", "rev-parse", "HEAD"],
                                        text=True, stderr=subprocess.DEVNULL).strip()
     except Exception:  # noqa: BLE001
         return "unknown"
 
 
 def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dict:
+    """Execute one observable pipeline run and persist terminal failures.
+
+    The inner runner records ``running`` as soon as the warehouse is available. This outer
+    boundary converts every otherwise-unhandled exception into ``failed`` while preserving the
+    original traceback for Cloud Run retry/error reporting.
+    """
     settings = settings or get_settings()
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     started = datetime.now(UTC)
     stages: dict[str, float] = {}
+    try:
+        return _execute_pipeline(settings, dry_run, run_id, started, stages)
+    except Exception as exc:
+        try:
+            wh = get_warehouse(settings)
+            wh.init_schema()
+            existing = wh.query_df(
+                "SELECT status FROM pipeline_runs WHERE run_id = ?",
+                (run_id,),
+            )
+            # The explicit no-data failure path already persists richer counts; keep it intact.
+            already_failed = (
+                not existing.empty
+                and str(existing.iloc[0].get("status") or "").lower() == "failed"
+            )
+            if not already_failed:
+                wh.upsert_rows("pipeline_runs", [{
+                    "run_id": run_id,
+                    "started_at": started,
+                    "finished_at": datetime.now(UTC),
+                    "status": "failed",
+                    "stages": stages,
+                    "counts": {"error_type": type(exc).__name__},
+                    "git_sha": _git_sha(),
+                }], ["run_id"])
+        except Exception as record_exc:  # noqa: BLE001
+            log.error(
+                "pipeline.failure_status_persist_failed",
+                run_id=run_id,
+                error_type=type(record_exc).__name__,
+            )
+        log.exception(
+            "pipeline.failed",
+            run_id=run_id,
+            error_type=type(exc).__name__,
+        )
+        raise
+
+
+def _execute_pipeline(
+    settings: Settings,
+    dry_run: bool,
+    run_id: str,
+    started: datetime,
+    stages: dict[str, float],
+) -> dict:
     log.info("pipeline.start", run_id=run_id, backend=settings.backend, dry_run=dry_run)
 
     wh = get_warehouse(settings)
     wh.init_schema()
+    # Persist liveness before any network/model work. A hard crash leaves this row as ``running``
+    # so the health API can surface the stuck execution instead of showing an older success.
+    wh.upsert_rows("pipeline_runs", [{
+        "run_id": run_id,
+        "started_at": started,
+        "finished_at": None,
+        "status": "running",
+        "stages": {},
+        "counts": {},
+        "git_sha": _git_sha(),
+    }], ["run_id"])
 
     # 1) Ingest (+ self-healing of transient failures)
     t = time.time()
     healed = heal(collect(run_id, settings), settings, wh, run_id)
     snapshots, history, heal_stats = healed["snapshots"], healed["history"], healed["stats"]
-    wh.truncate("download_history")
+    usable_snapshots = sum(snapshot.get("downloads_7d") is not None for snapshot in snapshots)
+    if not snapshots or usable_snapshots == 0:
+        finished = datetime.now(UTC)
+        wh.upsert_rows("pipeline_runs", [{
+            "run_id": run_id,
+            "started_at": started,
+            "finished_at": finished,
+            "status": "failed",
+            "stages": {"ingest": round(time.time() - t, 1)},
+            "counts": {"packages": len(snapshots), "usable_snapshots": usable_snapshots},
+            "git_sha": _git_sha(),
+        }], ["run_id"])
+        raise RuntimeError("ingestion produced no usable package download snapshots")
     wh.insert_rows("snapshots", snapshots)
-    wh.insert_rows("download_history", history)
+    # The upstream API returns a rolling window and can revise recent dates. Upserting by the
+    # natural package-day key keeps older days as an expanding learning set and replaces revisions.
+    wh.upsert_rows("download_history", history, ["name", "date"])
     stages["ingest"] = round(time.time() - t, 1)
 
     import pandas as pd
 
     snap_df = pd.DataFrame(snapshots)
-    hist_df = pd.DataFrame(history)
+    hist_df = wh.query_df("SELECT name, date, downloads FROM download_history")
 
     # 2) Features (active feature sets are PR-controlled; see config/active_features.json)
     t = time.time()
@@ -80,7 +158,11 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
 
     # 3) Train
     t = time.time()
-    growth = GrowthModel(features=active_download, seed=settings.random_seed)
+    growth = GrowthModel(
+        features=active_download,
+        seed=settings.random_seed,
+        horizon_days=settings.growth_horizon_days,
+    )
     growth_metrics = growth.fit(train_df) if len(train_df) >= settings.min_train_rows else {
         "spearman": float("nan"), "note": "insufficient training rows", "n_train": len(train_df)}
     risk = RiskModel(features=active_risk, seed=settings.random_seed)
@@ -101,38 +183,204 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     # 4) Register (champion/challenger). Growth promotion is hard-gated: a candidate that fails
     # the validation gate is BLOCKED from becoming champion regardless of its primary metric.
     registry = ModelRegistry(settings)
+    matched_comparisons: dict[str, dict] = {}
+    compatible_growth, compatible_growth_version = registry.load_champion(
+        wh,
+        "growth",
+        GrowthModel,
+        required_provenance=growth.eval_provenance or None,
+    )
+    incumbent_growth, incumbent_growth_version = compatible_growth, compatible_growth_version
+    if incumbent_growth is None:
+        legacy_growth, legacy_growth_version = registry.load_champion(
+            wh, "growth", GrowthModel
+        )
+        if (
+            legacy_growth is not None
+            and legacy_growth.horizon_days == settings.growth_horizon_days
+        ):
+            incumbent_growth, incumbent_growth_version = legacy_growth, legacy_growth_version
+    if incumbent_growth is not None and growth.model is not None:
+        try:
+            incumbent_metrics, incumbent_provenance = incumbent_growth.evaluate_closed_test(
+                train_df
+            )
+            if (
+                incumbent_provenance.get("benchmark_hash")
+                == growth.eval_provenance.get("benchmark_hash")
+                and evaluation_lineage_matches(
+                    growth.eval_provenance, incumbent_provenance
+                )
+            ):
+                matched_comparisons["growth"] = {
+                    "incumbent_metric": incumbent_metrics.get("spearman"),
+                    "incumbent_version": incumbent_growth_version,
+                    "comparison_provenance": incumbent_provenance,
+                }
+        except (KeyError, TypeError, ValueError) as exc:
+            log.warning(
+                "pipeline.incumbent_comparison_failed",
+                model="growth",
+                version=incumbent_growth_version,
+                error=str(exc),
+            )
+    incumbent_risk, incumbent_risk_version = registry.load_champion(
+        wh,
+        "risk",
+        RiskModel,
+        required_provenance=risk.eval_provenance or None,
+    )
+    if incumbent_risk is not None and risk.model is not None:
+        try:
+            incumbent_metrics, incumbent_provenance = incumbent_risk.evaluate_closed_test(
+                risk_train
+            )
+            if (
+                incumbent_provenance.get("benchmark_hash")
+                == risk.eval_provenance.get("benchmark_hash")
+                and evaluation_lineage_matches(
+                    risk.eval_provenance, incumbent_provenance
+                )
+            ):
+                matched_comparisons["risk"] = {
+                    "incumbent_metric": incumbent_metrics.get("group_auc"),
+                    "incumbent_version": incumbent_risk_version,
+                    "comparison_provenance": incumbent_provenance,
+                }
+        except (KeyError, TypeError, ValueError) as exc:
+            log.warning(
+                "pipeline.incumbent_comparison_failed",
+                model="risk",
+                version=incumbent_risk_version,
+                error=str(exc),
+            )
     model_runs_rows: list[dict] = []
     model_metrics: dict[str, dict] = {}
+    promoted: dict[str, bool] = {}
     for name, model_obj, metrics, params in [
         ("growth", growth, growth_metrics, {"model": "LightGBMRegressor", "horizon_days": settings.growth_horizon_days}),
-        ("risk", risk, risk_metrics, {"model": "LightGBMClassifier"}),
+        ("risk", risk, risk_metrics, {"model": "LightGBMClassifier",
+                                      "evaluation": "stable-package-disjoint-holdout",
+                                      "cv": "StratifiedGroupKFold diagnostic",
+                                      "label_mode": risk_label_mode}),
     ]:
         gate_passed = gate.passed if (name == "growth" and settings.gate_enabled and not gate.skipped) else None
         if model_obj.model is not None:
-            champ, rows = registry.persist(wh, run_id, name, model_obj, metrics, params, gate_passed=gate_passed)
+            champ, rows = registry.persist(
+                wh,
+                run_id,
+                name,
+                model_obj,
+                metrics,
+                params,
+                gate_passed=gate_passed,
+                compatible_incumbent_available=(
+                    compatible_growth is not None
+                    if name == "growth"
+                    else incumbent_risk is not None
+                ),
+                **matched_comparisons.get(name, {}),
+            )
         else:
             champ, rows = False, []
+        promoted[name] = champ
         model_runs_rows.extend(rows)
-        model_metrics[name] = {**metrics, "is_champion": champ}
+        model_metrics[name] = {
+            **metrics,
+            "is_champion": champ,
+            "evaluation_provenance": getattr(model_obj, "eval_provenance", {}),
+        }
     model_metrics["risk"]["label_mode"] = risk_label_mode
     model_metrics["growth"]["gate"] = {"passed": gate.passed, "skipped": gate.skipped, "reasons": gate.reasons}
 
-    # 5) Score — serve the candidate only if it passed the gate; otherwise AUTO-ROLLBACK to the
-    # last-good (gate-passed) champion so a failed model never reaches the dashboard.
-    serving_growth, serving_note = growth, "candidate"
-    if growth.model is not None and settings.gate_enabled and not gate.passed and not gate.skipped:
-        champ_model, champ_ver = registry.load_champion(wh, "growth", GrowthModel)
-        if champ_model is not None:
-            serving_growth, serving_note = champ_model, f"rolled-back to {champ_ver}"
-            log.warning("pipeline.auto_rollback", serving=champ_ver, reasons=gate.reasons)
-        else:
-            serving_note = "candidate (gate-failed; no prior champion to roll back to)"
-            log.warning("pipeline.gate_failed_no_rollback", reasons=gate.reasons)
-    model_metrics["growth"]["serving"] = serving_note
+    # 5) Score — champion means served. A candidate that merely trains or passes validation but
+    # does not beat the best metric remains a challenger for BOTH models.
+    serving_growth, growth_ver = registry.select_for_serving(
+        wh, "growth", growth, promoted["growth"], GrowthModel)
+    serving_risk, risk_ver = registry.select_for_serving(
+        wh, "risk", risk, promoted["risk"], RiskModel)
+    if (
+        serving_growth is None
+        and incumbent_growth is not None
+        and incumbent_growth_version
+        and "growth" in matched_comparisons
+    ):
+        # During the evaluation-schema migration, the stored incumbent row has no new lineage
+        # metadata even though we just re-scored its artifact on the challenger's exact closed
+        # cohort. Keep serving that verified incumbent if the candidate is held; otherwise the
+        # first post-migration gate failure would blank every prediction.
+        serving_growth = incumbent_growth
+        growth_ver = incumbent_growth_version
+        log.info(
+            "pipeline.serving_rescored_legacy_growth_incumbent",
+            version=growth_ver,
+            benchmark=growth.eval_provenance.get("benchmark_hash"),
+        )
+
+    def _serving_note(name: str, version: str | None) -> str:
+        if version is None:
+            return "unavailable (no promoted champion)"
+        suffix = "newly promoted" if version == f"{name}-{run_id}" else "previous champion"
+        return f"{version} ({suffix})"
+
+    model_metrics["growth"]["serving"] = _serving_note("growth", growth_ver)
+    model_metrics["risk"]["serving"] = _serving_note("risk", risk_ver)
+    model_metrics["growth"]["served_version"] = growth_ver
+    model_metrics["risk"]["served_version"] = risk_ver
+    if serving_growth is not None:
+        current_incumbent_metric = matched_comparisons.get("growth", {}).get(
+            "incumbent_metric"
+        )
+        model_metrics["growth"]["serving_spearman"] = (
+            current_incumbent_metric
+            if growth_ver == incumbent_growth_version and current_incumbent_metric is not None
+            else serving_growth.metrics.get("spearman")
+        )
+        model_metrics["growth"]["served_eval_provenance"] = getattr(
+            serving_growth, "eval_provenance", {}
+        )
+    if serving_risk is not None:
+        current_incumbent_metric = matched_comparisons.get("risk", {}).get(
+            "incumbent_metric"
+        )
+        model_metrics["risk"]["serving_auc"] = (
+            current_incumbent_metric
+            if risk_ver == incumbent_risk_version and current_incumbent_metric is not None
+            else serving_risk.metrics.get("group_auc", serving_risk.metrics.get("auc"))
+        )
+        model_metrics["risk"]["served_eval_provenance"] = getattr(
+            serving_risk, "eval_provenance", {}
+        )
+    else:
+        # No unvalidated risk classifier is mixed into the transparent composite fallback.
+        serving_risk = RiskModel(features=active_risk, seed=settings.random_seed)
+        risk_ver = "risk-composite-v1"
+        model_metrics["risk"]["served_version"] = risk_ver
+        model_metrics["risk"]["serving"] = "composite-only (no promoted champion)"
+    if serving_growth is None:
+        growth_ver = "growth-persistence-v1"
+        model_metrics["growth"]["served_version"] = growth_ver
+        model_metrics["growth"]["serving"] = (
+            "deterministic persistence baseline (no durable promoted champion)"
+        )
+
+    # Every candidate metric row records the artifact actually used for this run's predictions.
+    served_versions = {"growth": growth_ver or "", "risk": risk_ver or ""}
+    for row in model_runs_rows:
+        if row["model_name"] in served_versions:
+            row["served_version"] = served_versions[row["model_name"]]
+
+    if not promoted["growth"]:
+        log.info("pipeline.challenger_held", model="growth", serving=growth_ver)
+    if not promoted["risk"]:
+        log.info("pipeline.challenger_held", model="risk", serving=risk_ver)
 
     t = time.time()
-    if serving_growth.model is not None and not score_df.empty:
-        predictions = build_predictions(run_id, score_df, snap_df, risk_df, serving_growth, risk)
+    if not score_df.empty:
+        predictions = build_predictions(run_id, score_df, snap_df, risk_df,
+                                        serving_growth, serving_risk,
+                                        growth_model_version=growth_ver,
+                                        risk_model_version=risk_ver)
     else:
         predictions = pd.DataFrame()
     stages["score"] = round(time.time() - t, 1)
@@ -150,13 +398,23 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
                     "run_id": run_id, "model_name": "monitor", "trained_at": now_d,
                     "version": f"monitor-{run_id}", "metric_name": k, "metric_value": float(drift[k]),
                     "n_train": None, "n_test": None, "params": {"severity": drift.get("severity")},
-                    "is_champion": False, "gcs_uri": "", "notes": f"drift {drift.get('severity')}"})
+                    "is_champion": False, "gcs_uri": "", "served_version": "",
+                    "eval_provenance": {}, "notes": f"drift {drift.get('severity')}"})
 
     # 5c) Backtest (held-out predicted vs actual) for the dashboard "Model accuracy" tab
     backtest_payload = {
-        "growth": growth_backtest(train_df, active_download) if len(train_df) >= settings.min_train_rows else None,
+        "growth": (
+            growth_backtest(
+                train_df,
+                active_download,
+                horizon_days=settings.growth_horizon_days,
+            )
+            if len(train_df) >= settings.min_train_rows
+            else None
+        ),
         "risk": risk_backtest(risk_train, active_risk),
         "label_mode": risk_label_mode,
+        "served_versions": {"growth": growth_ver, "risk": risk_ver},
     }
     wh.insert_rows("backtest", [{"run_id": run_id, "created_at": datetime.now(UTC),
                                  "payload": backtest_payload}])
@@ -191,12 +449,13 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
     finished = datetime.now(UTC)
     counts = {
         "packages": len(snapshots), "predictions": len(predictions),
-        "training_rows": len(train_df), "activities": len(crew["activities"]),
+        "training_rows": len(train_df), "risk_training_rows": len(risk_train),
+        "download_history_rows": len(hist_df), "activities": len(crew["activities"]),
     }
-    wh.insert_rows("pipeline_runs", [{
+    wh.upsert_rows("pipeline_runs", [{
         "run_id": run_id, "started_at": started, "finished_at": finished, "status": "success",
         "stages": stages, "counts": counts, "git_sha": _git_sha(),
-    }])
+    }], ["run_id"])
     log.info("pipeline.done", run_id=run_id, stages=stages, counts=counts, pr=crew.get("pr_url"))
     return {"run_id": run_id, "counts": counts, "stages": stages,
             "model_metrics": model_metrics, "pr_url": crew.get("pr_url")}
@@ -206,6 +465,14 @@ def _persist_features(wh, run_id, score_df, risk_df, snap_df) -> None:
     if score_df.empty:
         return
 
+    def download_count(row, column: str) -> float | None:
+        value = row.get(column)
+        try:
+            numeric = float(value)
+            return math.expm1(numeric) if math.isfinite(numeric) else None
+        except (TypeError, ValueError):
+            return None
+
     risk_by_name = {r["name"]: r for _, r in risk_df.iterrows()} if not risk_df.empty else {}
     cat_by_name = dict(zip(snap_df["name"], snap_df["category"], strict=False)) if not snap_df.empty else {}
     rows = []
@@ -214,8 +481,10 @@ def _persist_features(wh, run_id, score_df, risk_df, snap_df) -> None:
         row = {"run_id": run_id, "name": r["name"], "category": cat_by_name.get(r["name"]),
                "feature_date": r.get("feature_date"), "is_scoring_row": True,
                "at_risk_label": rk.get("at_risk_label")}
-        for col in ("log_d7", "log_d28", "velocity"):
-            row[{"log_d7": "downloads_7d", "log_d28": "downloads_28d", "velocity": "download_velocity"}[col]] = r.get(col)
+        # Storage columns are in download counts, while the model uses log1p counts.
+        row["downloads_7d"] = download_count(r, "log_d7")
+        row["downloads_28d"] = download_count(r, "log_d28")
+        row["download_velocity"] = r.get("velocity")
         for col in ("bus_factor", "scorecard_overall", "release_cadence_days", "dependency_count"):
             if col in rk:
                 row[col] = rk.get(col)

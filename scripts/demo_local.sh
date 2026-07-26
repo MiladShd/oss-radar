@@ -7,8 +7,8 @@
 # view the result. Works with no cloud credentials and no Anthropic key.
 #
 # Usage:
-#   scripts/demo_local.sh            # run the demo (8 packages)
-#   scripts/demo_local.sh --limit 12 # score more packages
+#   scripts/demo_local.sh            # run the demo (8 packages, category-balanced)
+#   scripts/demo_local.sh --limit 12 # score a larger category-balanced sample
 #   scripts/demo_local.sh --serve    # run the demo, then serve the dashboard
 #   make demo                        # same as the first form
 set -euo pipefail
@@ -72,7 +72,7 @@ fi
 # --- 4) run the pipeline into a predictable local warehouse ------------------
 export OSS_RADAR_BACKEND="${OSS_RADAR_BACKEND:-duckdb}"
 export OSS_RADAR_DUCKDB_PATH="${OSS_RADAR_DUCKDB_PATH:-$REPO_ROOT/oss_radar.duckdb}"
-say "Running the pipeline (dry-run · $LIMIT packages · DuckDB · no cloud, no PRs)"
+say "Running the pipeline (dry-run · $LIMIT category-balanced packages · DuckDB · no cloud, no PRs)"
 "$PYBIN" -m oss_radar.cli run --dry-run --limit "$LIMIT"
 
 # --- 5) tell the user where everything is ------------------------------------

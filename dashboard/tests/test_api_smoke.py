@@ -14,15 +14,18 @@ collapses the response to the empty default and fails the assertion (and CI).
 from __future__ import annotations
 
 import datetime as dt
+import warnings
+from pathlib import Path
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from oss_radar.warehouse.duckdb_backend import DuckDBWarehouse
 
 RUN_ID = "smoke-run"
-_NOW = dt.datetime(2026, 6, 20, 12, 0, 0)
-_TODAY = dt.date(2026, 6, 20)
+_NOW = dt.datetime.now(dt.UTC).replace(tzinfo=None, microsecond=0)
+_TODAY = _NOW.date()
 
 
 def _seed(path: str) -> DuckDBWarehouse:
@@ -38,14 +41,21 @@ def _seed(path: str) -> DuckDBWarehouse:
         {"run_id": RUN_ID, "predicted_at": _NOW, "name": "vllm", "category": "llm",
          "momentum_score": 88.0, "risk_score": 21.0, "growth_pred_70d": 0.12,
          "momentum_label": "high", "risk_level": "low",
+         "momentum_reasons": ["downloads accelerating"],
+         "risk_reasons": ["active maintenance"],
          "top_reasons": ["downloads accelerating", "active maintenance"]},
         {"run_id": RUN_ID, "predicted_at": _NOW, "name": "langchain", "category": "framework",
          "momentum_score": 41.0, "risk_score": 67.0, "growth_pred_70d": -0.03,
          "momentum_label": "low", "risk_level": "high",
-         "top_reasons": ["recent CVE", "issue backlog growing"]},
+         "top_reasons": [
+             "monthly downloads falling", "weekly downloads slowing",
+             "recent vulnerabilities", "issue backlog pressure",
+         ]},
     ])
     wh.insert_rows("snapshots", [
         {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "vllm", "category": "llm",
+         "primary_category": "llm", "capabilities": ["inference_serving_runtime"],
+         "github_topics": ["inference"], "primary_language": "Python",
          "repo": "vllm-project/vllm", "stars": 30000, "forks": 4000,
          "monthly_downloads": 5_000_000, "downloads_7d": 1_200_000,
          "dependent_repos_count": 1200, "vuln_count": 0, "scorecard_overall": 7.5,
@@ -55,14 +65,39 @@ def _seed(path: str) -> DuckDBWarehouse:
          "monthly_downloads": 20_000_000, "downloads_7d": 4_800_000,
          "dependent_repos_count": 8000, "vuln_count": 2, "scorecard_overall": 5.0,
          "days_since_last_release": 1.0, "bus_factor": 3.0, "archived": False},
+        {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "my-package", "category": "test",
+         "downloads_7d": 11},
+        {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "my.package", "category": "test",
+         "downloads_7d": 22},
+    ])
+    wh.insert_rows("download_history", [
+        {"name": "vllm", "date": _TODAY, "downloads": 1_200_000},
+        {"name": "my-package", "date": _TODAY, "downloads": 11},
+        {"name": "my.package", "date": _TODAY, "downloads": 22},
     ])
     wh.insert_rows("model_runs", [
         {"run_id": RUN_ID, "model_name": "growth", "trained_at": _NOW, "version": "v1",
          "metric_name": "spearman", "metric_value": 0.31, "n_train": 1200, "n_test": 200,
-         "is_champion": True},
+         "params": {"model": "LightGBMRegressor"}, "is_champion": True,
+         "gcs_uri": "gs://example/models/growth/v1.pkl",
+         "notes": "promoted on matched benchmark", "served_version": "v1",
+         "eval_provenance": {
+             "benchmark_hash": "benchmark-123",
+             "benchmark_kind": "stable-package-disjoint-holdout",
+         },
+         "comparison_version": "v0", "comparison_metric_value": 0.29,
+         "comparison_mode": "incumbent-rescored-current-benchmark"},
         {"run_id": RUN_ID, "model_name": "risk", "trained_at": _NOW, "version": "v1",
          "metric_name": "roc_auc", "metric_value": 0.78, "n_train": 90, "n_test": 20,
          "is_champion": True},
+    ])
+    wh.insert_rows("agent_activity", [
+        {"run_id": RUN_ID, "ts": _NOW, "agent": "DataEngineer",
+         "action": "check_ingestion_freshness", "status": "ok",
+         "summary": "All sources green.", "artifact_url": ""},
+        {"run_id": RUN_ID, "ts": _NOW, "agent": "MLOps",
+         "action": "publish_report", "status": "ok",
+         "summary": "Report written.", "artifact_url": ""},
     ])
     return wh
 
@@ -75,16 +110,26 @@ def client(tmp_path, monkeypatch):
     # Point the read layer at the seeded warehouse. Sharing the one connection
     # avoids a second read-write lock on the same DuckDB file.
     monkeypatch.setattr(queries, "_wh_cache", wh, raising=False)
+    main._response_cache.clear()
+    main._audit_limiter.clear()
     try:
         yield TestClient(main.app)
     finally:
+        main._response_cache.clear()
+        main._audit_limiter.clear()
         wh.close()
 
 
-def test_healthz(client):
+def test_healthz(client, monkeypatch):
+    monkeypatch.setenv("GIT_SHA", "0123456789abcdef")
+    monkeypatch.setenv("K_REVISION", "oss-radar-dashboard-00004-test")
     r = client.get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {
+        "status": "ok",
+        "git_sha": "0123456789abcdef",
+        "revision": "oss-radar-dashboard-00004-test",
+    }
 
 
 def test_overview_serves_seeded_data(client):
@@ -107,6 +152,20 @@ def test_packages_lists_every_scored_package(client):
     # JSON reasons round-trip from a stored string back into a list
     vllm = next(p for p in body if p["name"] == "vllm")
     assert isinstance(vllm["top_reasons"], list) and vllm["top_reasons"]
+    assert vllm["momentum_reasons"] == ["downloads accelerating"]
+    assert vllm["risk_reasons"] == ["active maintenance"]
+    assert vllm["primary_category"] == "llm"
+    assert vllm["capabilities"] == ["inference_serving_runtime"]
+    assert vllm["github_topics"] == ["inference"]
+    legacy = next(p for p in body if p["name"] == "langchain")
+    assert legacy["momentum_reasons"] == [
+        "monthly downloads falling",
+        "weekly downloads slowing",
+    ]
+    assert legacy["risk_reasons"] == [
+        "recent vulnerabilities",
+        "issue backlog pressure",
+    ]
 
 
 def test_models_history(client):
@@ -115,6 +174,179 @@ def test_models_history(client):
     body = r.json()
     assert {m["model_name"] for m in body} == {"growth", "risk"}
     assert all("metric_value" in m for m in body)
+    growth = next(m for m in body if m["model_name"] == "growth")
+    assert growth["served_version"] == "v1"
+    assert growth["n_test"] == 200
+    assert growth["params"]["model"] == "LightGBMRegressor"
+    assert growth["gcs_uri"].endswith("/v1.pkl")
+    assert growth["notes"] == "promoted on matched benchmark"
+    assert growth["eval_provenance"]["benchmark_hash"] == "benchmark-123"
+    assert growth["comparison_version"] == "v0"
+    assert growth["comparison_metric_value"] == 0.29
+    assert growth["comparison_mode"] == "incumbent-rescored-current-benchmark"
+
+
+def test_models_history_falls_back_to_legacy_schema(monkeypatch):
+    from dashboard.app import queries
+
+    class LegacyWarehouse:
+        def __init__(self):
+            self.queries = []
+
+        def query_df(self, sql):
+            self.queries.append(sql)
+            if "served_version" in sql:
+                raise RuntimeError("column does not exist")
+            return pd.DataFrame([{
+                "run_id": RUN_ID,
+                "model_name": "growth",
+                "trained_at": _NOW,
+                "version": "legacy-v1",
+                "metric_name": "spearman",
+                "metric_value": 0.25,
+                "n_train": 100,
+                "n_test": 20,
+                "params": '{"model":"legacy"}',
+                "is_champion": True,
+                "gcs_uri": "",
+                "notes": "legacy row",
+            }])
+
+    legacy = LegacyWarehouse()
+    monkeypatch.setattr(queries, "_wh_cache", legacy, raising=False)
+
+    body = queries.model_history()
+
+    assert len(legacy.queries) == 2
+    assert body[0]["served_version"] == ""
+    assert body[0]["params"] == {"model": "legacy"}
+    assert body[0]["eval_provenance"] == {}
+    assert body[0]["comparison_version"] == ""
+    assert body[0]["comparison_metric_value"] is None
+    assert body[0]["comparison_mode"] == ""
+
+
+def test_dashboard_uses_scoped_reason_fallback_and_describes_risk_formula():
+    html = (
+        Path(__file__).resolve().parents[1] / "app" / "static" / "index.html"
+    ).read_text()
+
+    assert "function scopedReasons" in html
+    assert "if(scoped.length)" in html
+    assert 'const source=scopedReasons(p,scoreKey==="momentum_score"?"momentum":"risk")' in html
+    assert 'scopedReasons(p,"momentum")' in html
+    assert 'scopedReasons(p,"risk")' in html
+    assert "calibrated classifier" in html
+    assert "categorical safety floors" in html
+
+
+@pytest.mark.parametrize(
+    ("name", "downloads"),
+    [("vllm", 1_200_000), ("my-package", 11), ("my.package", 22)],
+)
+def test_package_detail_uses_parameterized_names(client, name, downloads):
+    body = client.get(f"/api/package/{name}").json()
+    assert body["downloads"][0]["downloads"] == downloads
+    assert body["snapshots"]
+
+
+def test_package_detail_rejects_hostile_input(client):
+    body = client.get("/api/package/vllm%27%20OR%201%3D1--").json()
+    assert body == {"prediction": None, "downloads": [], "snapshots": []}
+
+
+def test_expensive_read_routes_are_cached(client, monkeypatch):
+    from dashboard.app import main, queries
+
+    calls = 0
+
+    def fake_overview():
+        nonlocal calls
+        calls += 1
+        return {"data_state": "ready", "tracked": 123, "movers": [], "risks": []}
+
+    main._response_cache.clear()
+    monkeypatch.setattr(queries, "overview", fake_overview)
+    assert client.get("/api/overview").json()["tracked"] == 123
+    assert client.get("/api/overview").json()["tracked"] == 123
+    assert calls == 1
+
+
+def test_system_health_reports_green_run_and_logs(client):
+    r = client.get("/api/system-health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["data_state"] == "ready"
+    assert body["status"] == "green"
+    assert body["run_days"] == 1
+    assert body["error_count"] == 0
+    assert body["warning_count"] == 0
+    assert any("Run smoke-run status: success" in log["message"] for log in body["logs"])
+    assert any(log["source"] == "DataEngineer" for log in body["logs"])
+
+
+def test_system_health_detects_a_stale_success(client):
+    from dashboard.app import main, queries
+
+    wh = queries._wh_cache
+    wh._con.execute(  # noqa: SLF001 - test fixture intentionally mutates its private connection
+        "UPDATE pipeline_runs SET finished_at = ? WHERE run_id = ?",
+        [_NOW - dt.timedelta(hours=48), RUN_ID],
+    )
+    main._response_cache.clear()
+    body = client.get("/api/system-health").json()
+
+    assert body["status"] == "red"
+    assert any(issue["status"] == "stale" for issue in body["issues"])
+
+
+def test_system_health_detects_a_stuck_running_execution(client):
+    from dashboard.app import main, queries
+
+    wh = queries._wh_cache
+    wh._con.execute(  # noqa: SLF001 - test fixture intentionally mutates its private connection
+        "UPDATE pipeline_runs SET status = 'running', started_at = ?, finished_at = NULL "
+        "WHERE run_id = ?",
+        [_NOW - dt.timedelta(hours=2), RUN_ID],
+    )
+    main._response_cache.clear()
+    body = client.get("/api/system-health").json()
+
+    assert body["status"] == "red"
+    assert any(issue["status"] == "running" for issue in body["issues"])
+
+
+def test_public_audit_endpoint_is_rate_limited(client):
+    responses = [client.post("/api/audit", json={"packages": []}) for _ in range(11)]
+
+    assert all(response.status_code == 200 for response in responses[:10])
+    assert responses[-1].status_code == 429
+    assert responses[-1].headers["retry-after"] == "60"
+
+
+def test_public_audit_enforces_actual_streamed_body_size(client):
+    response = client.post(
+        "/api/audit",
+        content=b'{"requirements":"' + (b"x" * 25_001) + b'"}',
+        headers={"content-length": "0", "content-type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"] == "request body too large"
+
+
+def test_legacy_growth_prediction_fallback_is_future_warning_free():
+    from dashboard.app.queries import _normalize_growth_prediction
+
+    frame = pd.DataFrame({
+        "growth_pred_70d": [None, 0.3],
+        "growth_pred_7d": [0.1, 0.2],
+    })
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        normalized = _normalize_growth_prediction(frame)
+
+    assert normalized["growth_pred_70d"].tolist() == [0.1, 0.3]
 
 
 def test_empty_warehouse_degrades_gracefully(tmp_path, monkeypatch):
@@ -131,6 +363,10 @@ def test_empty_warehouse_degrades_gracefully(tmp_path, monkeypatch):
         overview = c.get("/api/overview")
         assert overview.status_code == 200
         assert overview.json()["tracked"] == 0
+        assert overview.json()["data_state"] == "error"
         assert c.get("/api/packages").json() == []
+        system = c.get("/api/system-health").json()
+        assert system["status"] == "unknown"
+        assert system["data_state"] == "error"
     finally:
         empty.close()

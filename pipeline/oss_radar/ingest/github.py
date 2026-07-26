@@ -15,6 +15,13 @@ from oss_radar.ingest.http import HttpClient
 BASE = "https://api.github.com"
 
 
+def parse_topics(raw: object) -> list[str]:
+    """Return GitHub topic strings unchanged, ignoring malformed values."""
+    if not isinstance(raw, list):
+        return []
+    return [topic for topic in raw if isinstance(topic, str) and topic]
+
+
 def make_client(token: str = "", timeout: int = 30) -> HttpClient:
     headers = {
         "Accept": "application/vnd.github+json",
@@ -37,6 +44,9 @@ def fetch(client: HttpClient, owner: str, repo: str, want_velocity: bool = True)
         out.setdefault("pushed_at", repo_data.get("pushed_at"))
         out.setdefault("created_at", repo_data.get("created_at"))
         out.setdefault("archived", repo_data.get("archived"))
+        # These already arrive in the repository response above; no extra API calls.
+        out["github_topics"] = parse_topics(repo_data.get("topics"))
+        out["primary_language"] = repo_data.get("language")
 
     commit_activity = client.get_json(f"{BASE}/repos/{owner}/{repo}/stats/commit_activity")
     if isinstance(commit_activity, list) and commit_activity:

@@ -47,6 +47,9 @@ def _run_validation(settings, out_dir: str, upload: bool, staleness_hours: float
     subprocess.run([sys.executable, str(script)], env=env, check=True)
 
     present = [a for a in _VALIDATION_ARTIFACTS if (out / a).exists()]
+    missing = sorted(set(_VALIDATION_ARTIFACTS) - set(present))
+    if missing:
+        raise RuntimeError(f"validation harness did not produce required artifacts: {missing}")
     _check_wolfram_staleness(settings, out, staleness_hours)
     if upload:
         _upload_validation(settings, out, present)
@@ -54,18 +57,22 @@ def _run_validation(settings, out_dir: str, upload: bool, staleness_hours: float
 
 
 def _upload_validation(settings, out: Path, artifacts: list[str]) -> None:
-    try:
-        from google.cloud import storage
+    """Upload to the Terraform-owned artifact bucket and fail the command on any error.
 
-        client = storage.Client(project=settings.gcp_project)
-        bucket = client.bucket(settings.artifact_bucket)
-        if not bucket.exists():
-            bucket = client.create_bucket(bucket, location=settings.region)
+    ``--upload`` is an explicit durability request, so a warning-only failure would make
+    scheduled validation look successful while leaving stale cloud evidence.
+    """
+    from google.cloud import storage
+
+    client = storage.Client(project=settings.gcp_project)
+    bucket = client.bucket(settings.artifact_bucket)
+    try:
         for a in artifacts:
             bucket.blob(f"validation/{a}").upload_from_filename(str(out / a))
-        log.info("validate.uploaded", bucket=settings.artifact_bucket, n=len(artifacts))
     except Exception as exc:  # noqa: BLE001
-        log.warning("validate.upload_failed", error=str(exc))
+        log.error("validate.upload_failed", bucket=settings.artifact_bucket, error=str(exc))
+        raise
+    log.info("validate.uploaded", bucket=settings.artifact_bucket, n=len(artifacts))
 
 
 def _check_wolfram_staleness(settings, out: Path, hours: float) -> None:

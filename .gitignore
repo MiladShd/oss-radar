@@ -25,6 +25,7 @@ mlruns/
 *-key.json
 service-account*.json
 application_default_credentials.json
+gha-creds-*.json
 
 # OS / editor
 .DS_Store
@@ -36,7 +37,6 @@ application_default_credentials.json
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.backup
-infra/terraform/.terraform.lock.hcl
 infra/terraform/terraform.tfvars
 
 # Reports are generated; keep a sample, ignore the rest

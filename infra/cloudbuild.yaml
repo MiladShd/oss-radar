@@ -1,16 +1,44 @@
-# Builds both images for linux/amd64 (Cloud Run's arch) and pushes to Artifact Registry.
+# Builds one immutable linux/amd64 release image per submission. Pipeline and dashboard are
+# intentionally submitted independently so a partial push is safely resumable.
+substitutions:
+  _COMPONENT: pipeline
+
 steps:
   - name: gcr.io/cloud-builders/docker
-    id: build-pipeline
-    args: ['build', '-f', 'pipeline/Dockerfile', '-t', '${_REPO}/pipeline:${_TAG}', '-t', '${_REPO}/pipeline:latest', '.']
+    id: build
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        case "${_COMPONENT}" in
+          pipeline|dashboard) ;;
+          *) echo "unsupported component: ${_COMPONENT}" >&2; exit 2 ;;
+        esac
+        docker build \
+          --build-arg "GIT_SHA=${_TAG}" \
+          -f "${_COMPONENT}/Dockerfile" \
+          -t "${_REPO}/${_COMPONENT}:${_TAG}" \
+          .
   - name: gcr.io/cloud-builders/docker
-    id: build-dashboard
-    args: ['build', '-f', 'dashboard/Dockerfile', '-t', '${_REPO}/dashboard:${_TAG}', '-t', '${_REPO}/dashboard:latest', '.']
+    id: smoke-import-and-provenance
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        image="${_REPO}/${_COMPONENT}:${_TAG}"
+        if [[ "${_COMPONENT}" == "pipeline" ]]; then
+          docker run --rm --entrypoint=python "$${image}" -c \
+            'import os; from oss_radar.orchestrator.pipeline import run_pipeline; assert os.environ["GIT_SHA"] == "${_TAG}"; print("pipeline import/provenance ok")'
+        else
+          docker run --rm "$${image}" python -c \
+            'import os; from dashboard.app.main import app; assert os.environ["GIT_SHA"] == "${_TAG}"; print(app.title)'
+        fi
+
 images:
-  - '${_REPO}/pipeline:${_TAG}'
-  - '${_REPO}/pipeline:latest'
-  - '${_REPO}/dashboard:${_TAG}'
-  - '${_REPO}/dashboard:latest'
+  - '${_REPO}/${_COMPONENT}:${_TAG}'
+
 options:
-  machineType: 'E2_HIGHCPU_8'
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
 timeout: 1800s

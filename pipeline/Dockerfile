@@ -1,12 +1,14 @@
 # Pipeline image — daily ETL + train + score + agents (Cloud Run Job).
 FROM python:3.12-slim
 
+ARG GIT_SHA=unknown
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     OSS_RADAR_BACKEND=bigquery \
     OSS_RADAR_ENV=cloud \
-    MLFLOW_TRACKING_URI=file:/tmp/mlruns
+    MLFLOW_TRACKING_URI=file:/tmp/mlruns \
+    GIT_SHA=${GIT_SHA}
 
 # libgomp1 is required at runtime by LightGBM (OpenMP).
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \

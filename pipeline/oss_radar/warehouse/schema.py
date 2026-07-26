@@ -15,6 +15,8 @@ SNAPSHOTS: list[Column] = [
     ("snapshot_date", "DATE"),
     ("name", "STRING"),
     ("category", "STRING"),
+    ("primary_category", "STRING"),
+    ("capabilities", "JSON"),
     ("repo", "STRING"),
     # downloads (pypistats)
     ("downloads_1d", "INT"),
@@ -35,6 +37,8 @@ SNAPSHOTS: list[Column] = [
     ("issues_opened_7d", "INT"),
     ("bus_factor", "FLOAT"),
     ("archived", "BOOL"),
+    ("github_topics", "JSON"),
+    ("primary_language", "STRING"),
     # ecosystem (ecosyste.ms)
     ("dependent_packages_count", "INT"),
     ("dependent_repos_count", "INT"),
@@ -56,6 +60,7 @@ SNAPSHOTS: list[Column] = [
     ("vuln_new_14d", "INT"),
     ("vuln_new_28d", "INT"),
     ("max_severity", "STRING"),
+    ("max_severity_new_28d", "STRING"),
     # provenance
     ("source_status", "JSON"),
     ("ingested_at", "TIMESTAMP"),
@@ -109,13 +114,19 @@ FEATURES: list[Column] = [
 PREDICTIONS: list[Column] = [
     ("run_id", "STRING"),
     ("predicted_at", "TIMESTAMP"),
+    ("growth_model_version", "STRING"),
+    ("risk_model_version", "STRING"),
     ("name", "STRING"),
     ("category", "STRING"),
     ("momentum_score", "FLOAT"),
     ("risk_score", "FLOAT"),
+    ("risk_composite_score", "FLOAT"),
+    ("risk_classifier_probability", "FLOAT"),
     ("growth_pred_70d", "FLOAT"),
     ("momentum_label", "STRING"),
     ("risk_level", "STRING"),
+    ("momentum_reasons", "JSON"),
+    ("risk_reasons", "JSON"),
     ("top_reasons", "JSON"),
 ]
 
@@ -132,6 +143,11 @@ MODEL_RUNS: list[Column] = [
     ("params", "JSON"),
     ("is_champion", "BOOL"),
     ("gcs_uri", "STRING"),
+    ("served_version", "STRING"),
+    ("eval_provenance", "JSON"),
+    ("comparison_version", "STRING"),
+    ("comparison_metric_value", "FLOAT"),
+    ("comparison_mode", "STRING"),
     ("notes", "STRING"),
 ]
 

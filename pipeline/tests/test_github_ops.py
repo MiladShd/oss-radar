@@ -33,6 +33,79 @@ class FakeRepo:
         return issue
 
 
+class FakePull:
+    def __init__(self):
+        self.html_url = "https://github.test/pull/7"
+        self.edits = []
+        self.labels = []
+
+    def edit(self, **kwargs):
+        self.edits.append(kwargs)
+
+    def add_to_labels(self, *labels):
+        self.labels.extend(labels)
+
+
+class FakeRef:
+    def __init__(self):
+        self.edits = []
+
+    def edit(self, **kwargs):
+        self.edits.append(kwargs)
+
+
+class FakeFile:
+    sha = "old-file-sha"
+
+
+class FakeFileRepo:
+    default_branch = "main"
+
+    def __init__(self, pull=None, branch_exists=True):
+        self.owner = type("Owner", (), {"login": "owner"})()
+        self.pull = pull
+        self.branch_exists = branch_exists
+        self.ref = FakeRef()
+        self.created_refs = []
+        self.updated_files = []
+        self.created_files = []
+        self.created_pulls = []
+
+    def get_branch(self, branch):
+        assert branch == "main"
+        return type("Branch", (), {"commit": type("Commit", (), {"sha": "new-main-sha"})()})()
+
+    def get_git_ref(self, ref):
+        assert ref == "heads/oss-radar/feature-recent-share"
+        if not self.branch_exists:
+            raise RuntimeError("missing")
+        return self.ref
+
+    def create_git_ref(self, **kwargs):
+        self.created_refs.append(kwargs)
+
+    def get_contents(self, path, ref):
+        assert path == "pipeline/oss_radar/config/active_features.json"
+        assert ref == "oss-radar/feature-recent-share"
+        return FakeFile()
+
+    def update_file(self, *args, **kwargs):
+        self.updated_files.append((args, kwargs))
+
+    def create_file(self, *args, **kwargs):
+        self.created_files.append((args, kwargs))
+
+    def get_pulls(self, state, head):
+        assert state == "open"
+        assert head == "owner:oss-radar/feature-recent-share"
+        return [self.pull] if self.pull else []
+
+    def create_pull(self, **kwargs):
+        pull = FakePull()
+        self.created_pulls.append(kwargs)
+        return pull
+
+
 def test_open_or_comment_issue_reuses_matching_open_issue(monkeypatch):
     issue = FakeIssue("[oss-radar] Prediction drift detected (high)")
     repo = FakeRepo([issue])
@@ -69,3 +142,61 @@ def test_close_open_issues_comments_and_closes(monkeypatch):
     assert closed == [issue.html_url for issue in issues]
     assert [issue.comments for issue in issues] == [["recovered"], ["recovered"]]
     assert [issue.state for issue in issues] == ["closed", "closed"]
+
+
+def test_open_file_pr_refreshes_existing_branch_and_pull_request(monkeypatch):
+    pull = FakePull()
+    repo = FakeFileRepo(pull=pull)
+    monkeypatch.setattr(github_ops, "_repo", lambda token, repo_full: repo)
+
+    url = github_ops.open_file_pr(
+        "token",
+        "owner/repo",
+        "oss-radar/feature-recent-share",
+        "pipeline/oss_radar/config/active_features.json",
+        '{"download": ["recent_share"]}\n',
+        "Enable growth feature `recent_share` (\u0394spearman +0.013)",
+        "fresh experiment details",
+        labels=["oss-radar", "self-improvement", "model"],
+    )
+
+    assert url == pull.html_url
+    assert repo.ref.edits == [{"sha": "new-main-sha", "force": True}]
+    assert repo.created_refs == []
+    assert len(repo.updated_files) == 1
+    assert repo.updated_files[0][1]["branch"] == "oss-radar/feature-recent-share"
+    assert pull.edits == [{
+        "title": "Enable growth feature `recent_share` (\u0394spearman +0.013)",
+        "body": "fresh experiment details",
+        "base": "main",
+        "state": "open",
+    }]
+    assert pull.labels == ["oss-radar", "self-improvement", "model"]
+    assert repo.created_pulls == []
+
+
+def test_open_file_pr_creates_missing_branch_and_new_pull_request(monkeypatch):
+    repo = FakeFileRepo(branch_exists=False)
+    monkeypatch.setattr(github_ops, "_repo", lambda token, repo_full: repo)
+
+    url = github_ops.open_file_pr(
+        "token",
+        "owner/repo",
+        "oss-radar/feature-recent-share",
+        "pipeline/oss_radar/config/active_features.json",
+        '{"download": ["recent_share"]}\n',
+        "Enable growth feature `recent_share` (\u0394spearman +0.013)",
+        "experiment details",
+    )
+
+    assert url == "https://github.test/pull/7"
+    assert repo.created_refs == [{
+        "ref": "refs/heads/oss-radar/feature-recent-share",
+        "sha": "new-main-sha",
+    }]
+    assert repo.created_pulls == [{
+        "title": "Enable growth feature `recent_share` (\u0394spearman +0.013)",
+        "body": "experiment details",
+        "head": "oss-radar/feature-recent-share",
+        "base": "main",
+    }]

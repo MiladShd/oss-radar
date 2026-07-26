@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import duckdb
 import pandas as pd
 import structlog
@@ -39,8 +41,43 @@ class DuckDBWarehouse(Warehouse):
         self._con.executemany(sql, data)
         return len(data)
 
-    def query_df(self, sql: str) -> pd.DataFrame:
-        return self._con.execute(sql).fetch_df()
+    def upsert_rows(self, table: str, rows: list[dict], key_columns: list[str]) -> int:
+        if not rows:
+            return 0
+        prepared = self.prepare_upsert_rows(table, rows, key_columns)
+        if not prepared:
+            return 0
+
+        columns = [name for name, _ in S.TABLES[table]]
+        batch_name = "_oss_radar_upsert_batch"
+        batch = pd.DataFrame(prepared, columns=columns)
+        quoted_columns = ", ".join(f'"{column}"' for column in columns)
+        match = " AND ".join(
+            f't."{column}" IS NOT DISTINCT FROM s."{column}"' for column in key_columns
+        )
+
+        self._con.register(batch_name, batch)
+        try:
+            self._con.execute("BEGIN TRANSACTION")
+            self._con.execute(
+                f'DELETE FROM "{table}" AS t USING "{batch_name}" AS s WHERE {match}'
+            )
+            self._con.execute(
+                f'INSERT INTO "{table}" ({quoted_columns}) '
+                f'SELECT {quoted_columns} FROM "{batch_name}"'
+            )
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        finally:
+            self._con.unregister(batch_name)
+        return len(prepared)
+
+    def query_df(
+        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None
+    ) -> pd.DataFrame:
+        return self._con.execute(sql, params or []).fetch_df()
 
     def truncate(self, table: str) -> None:
         self._con.execute(f'DELETE FROM "{table}"')

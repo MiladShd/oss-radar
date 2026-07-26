@@ -1,0 +1,470 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - "dashboard/**"
+      - "infra/cloudbuild.yaml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy ${{ github.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_BUILD_SERVICE_ACCOUNT: ${{ vars.GCP_BUILD_SERVICE_ACCOUNT }}
+      ARTIFACT_REPOSITORY: oss-radar
+      PIPELINE_JOB: oss-radar-pipeline
+      SMOKE_JOB: oss-radar-pipeline-smoke
+      DASHBOARD_SERVICE: oss-radar-dashboard
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check deployment configuration
+        shell: bash
+        run: |
+          missing=()
+          for name in GCP_PROJECT_ID GCP_REGION GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_BUILD_SERVICE_ACCOUNT; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} )); then
+            echo "Missing GitHub Actions repository variable(s): ${missing[*]}" >&2
+            echo "Run scripts/deploy.sh once with an authenticated gcloud and gh CLI to bootstrap them." >&2
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Build or reuse commit images
+        id: images
+        shell: bash
+        run: |
+          repo="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}"
+          pipeline_tag="${repo}/pipeline:${GITHUB_SHA}"
+          dashboard_tag="${repo}/dashboard:${GITHUB_SHA}"
+          pipeline_exists=0
+          dashboard_exists=0
+          gcloud artifacts docker images describe "${pipeline_tag}" \
+            --project="${GCP_PROJECT_ID}" >/dev/null 2>&1 && pipeline_exists=1
+          gcloud artifacts docker images describe "${dashboard_tag}" \
+            --project="${GCP_PROJECT_ID}" >/dev/null 2>&1 && dashboard_exists=1
+          if [[ "${pipeline_exists}" == "0" ]]; then
+            gcloud builds submit \
+              --project="${GCP_PROJECT_ID}" \
+              --config=infra/cloudbuild.yaml \
+              --service-account="${GCP_BUILD_SERVICE_ACCOUNT}" \
+              --substitutions="_REPO=${repo},_TAG=${GITHUB_SHA},_COMPONENT=pipeline" \
+              --gcs-source-staging-dir="gs://${GCP_PROJECT_ID}-oss-radar-build-source/source" \
+              .
+          else
+            echo "Reusing existing immutable pipeline image for ${GITHUB_SHA}."
+          fi
+          if [[ "${dashboard_exists}" == "0" ]]; then
+            gcloud builds submit \
+              --project="${GCP_PROJECT_ID}" \
+              --config=infra/cloudbuild.yaml \
+              --service-account="${GCP_BUILD_SERVICE_ACCOUNT}" \
+              --substitutions="_REPO=${repo},_TAG=${GITHUB_SHA},_COMPONENT=dashboard" \
+              --gcs-source-staging-dir="gs://${GCP_PROJECT_ID}-oss-radar-build-source/source" \
+              .
+          else
+            echo "Reusing existing immutable dashboard image for ${GITHUB_SHA}."
+          fi
+          pipeline_image="$(gcloud artifacts docker images describe "${pipeline_tag}" \
+            --project="${GCP_PROJECT_ID}" \
+            --format='value(image_summary.fully_qualified_digest)')"
+          dashboard_image="$(gcloud artifacts docker images describe "${dashboard_tag}" \
+            --project="${GCP_PROJECT_ID}" \
+            --format='value(image_summary.fully_qualified_digest)')"
+          [[ "${pipeline_image}" == *@sha256:* && "${dashboard_image}" == *@sha256:* ]]
+          {
+            echo "pipeline_image=${pipeline_image}"
+            echo "dashboard_image=${dashboard_image}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Capture current production release
+        id: previous
+        shell: bash
+        run: |
+          job_json="$(
+            gcloud run jobs describe "${PIPELINE_JOB}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json
+          )"
+          service_json="$(
+            gcloud run services describe "${DASHBOARD_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json
+          )"
+          previous="$(
+            JOB_JSON="${job_json}" SERVICE_JSON="${service_json}" python - <<'PY'
+          import json
+          import os
+
+          job = json.loads(os.environ["JOB_JSON"])
+          service = json.loads(os.environ["SERVICE_JSON"])
+          container = job["spec"]["template"]["spec"]["template"]["spec"]["containers"][0]
+          env = {item["name"]: item.get("value") for item in container.get("env", [])}
+          runtime_sha_present = "GIT_SHA" in env
+          previous_sha = (
+              env.get("GIT_SHA")
+              or job.get("metadata", {}).get("labels", {}).get("git_sha")
+              or "unknown"
+          )
+          service_labels = service.get("metadata", {}).get("labels", {})
+          dashboard_sha_present = "git_sha" in service_labels
+          traffic = service.get("status", {}).get("traffic", [])
+          production = max(traffic, key=lambda target: int(target.get("percent") or 0))
+          previous_candidate = next(
+              (
+                  target.get("revisionName", "")
+                  for target in traffic
+                  if target.get("tag") == "candidate"
+              ),
+              "",
+          )
+          print(
+              f"{container['image']}|{previous_sha}|"
+              f"{production.get('revisionName', '')}|"
+              f"{str(runtime_sha_present).lower()}|{env.get('GIT_SHA', '')}|"
+              f"{str(dashboard_sha_present).lower()}|{service_labels.get('git_sha', '')}|"
+              f"{previous_candidate}"
+          )
+          PY
+          )"
+          IFS='|' read -r \
+            previous_pipeline_image \
+            previous_sha \
+            previous_dashboard_revision \
+            previous_runtime_sha_present \
+            previous_runtime_sha \
+            previous_dashboard_sha_present \
+            previous_dashboard_sha \
+            previous_candidate_revision <<< "${previous}"
+          test -n "${previous_pipeline_image}" \
+            && test -n "${previous_sha}" \
+            && test -n "${previous_dashboard_revision}" \
+            && [[ "${previous_runtime_sha_present}" =~ ^(true|false)$ ]] \
+            && [[ "${previous_dashboard_sha_present}" =~ ^(true|false)$ ]]
+          {
+            echo "pipeline_image=${previous_pipeline_image}"
+            echo "git_sha=${previous_sha}"
+            echo "dashboard_revision=${previous_dashboard_revision}"
+            echo "pipeline_runtime_sha_present=${previous_runtime_sha_present}"
+            echo "pipeline_runtime_sha=${previous_runtime_sha}"
+            echo "dashboard_sha_present=${previous_dashboard_sha_present}"
+            echo "dashboard_sha=${previous_dashboard_sha}"
+            echo "candidate_revision=${previous_candidate_revision}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy dashboard service
+        id: dashboard
+        env:
+          DASHBOARD_IMAGE: ${{ steps.images.outputs.dashboard_image }}
+        shell: bash
+        run: |
+          gcloud run services update "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --image="${DASHBOARD_IMAGE}" \
+            --remove-env-vars="GIT_SHA" \
+            --update-labels="git_sha=${GITHUB_SHA}" \
+            --no-traffic \
+            --tag="candidate"
+          service_json="$(
+            gcloud run services describe "${DASHBOARD_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json
+          )"
+          service_url="$(gcloud run services describe "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --format='value(status.url)')"
+          candidate="$(
+            SERVICE_JSON="${service_json}" python - <<'PY'
+          import json
+          import os
+
+          service = json.loads(os.environ["SERVICE_JSON"])
+          for target in service.get("status", {}).get("traffic", []):
+              if target.get("tag") == "candidate":
+                  print(f"{target['url']}|{target['revisionName']}")
+                  break
+          else:
+              raise SystemExit("Cloud Run did not expose the candidate traffic tag")
+          PY
+          )"
+          candidate_url="${candidate%%|*}"
+          revision="${candidate#*|}"
+          test -n "${service_url}" && test -n "${candidate_url}" && test -n "${revision}"
+          {
+            echo "service_url=${service_url}"
+            echo "candidate_url=${candidate_url}"
+            echo "revision=${revision}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Verify zero-traffic dashboard candidate
+        env:
+          DASHBOARD_URL: ${{ steps.dashboard.outputs.candidate_url }}
+        shell: bash
+        run: |
+          health="$(curl --fail --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            --max-time 20 "${DASHBOARD_URL}/healthz")"
+          HEALTH_JSON="${health}" python - <<'PY'
+          import json
+          import os
+
+          health = json.loads(os.environ["HEALTH_JSON"])
+          expected = os.environ["GITHUB_SHA"]
+          if health.get("status") != "ok":
+              raise SystemExit(f"dashboard is unhealthy: {health}")
+          if health.get("git_sha") != expected:
+              raise SystemExit(
+                  f"deployed git_sha {health.get('git_sha')!r} does not match {expected!r}"
+              )
+          print(f"Verified {health.get('revision', 'unknown revision')} at {expected}")
+          PY
+          system_health="$(curl --fail --silent --show-error \
+            --retry 3 --retry-delay 3 --retry-all-errors \
+            --max-time 30 "${DASHBOARD_URL}/api/system-health")"
+          SYSTEM_HEALTH_JSON="${system_health}" python - <<'PY'
+          import json
+          import os
+
+          health = json.loads(os.environ["SYSTEM_HEALTH_JSON"])
+          if health.get("data_state") == "error":
+              raise SystemExit(f"warehouse health query failed: {health}")
+          if health.get("status") not in {"green", "yellow", "red", "unknown"}:
+              raise SystemExit(f"unexpected system-health contract: {health}")
+          print(
+              "Verified warehouse health contract "
+              f"(state={health.get('data_state')}, status={health.get('status')})"
+          )
+          PY
+          root_html="$(curl --fail --silent --show-error \
+            --retry 3 --retry-delay 3 --retry-all-errors \
+            --max-time 20 "${DASHBOARD_URL}/")"
+          ROOT_HTML="${root_html}" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          html = os.environ["ROOT_HTML"]
+          required = (
+              "<title>OSS Radar — open-source intelligence</title>",
+              'id="movers"',
+              'id="pbody"',
+              "<script>",
+          )
+          missing = [marker for marker in required if marker not in html]
+          if missing:
+              raise SystemExit(f"deployed SPA shell is incomplete: {missing}")
+          try:
+              inline = html.rsplit("<script>", 1)[1].split("</script>", 1)[0]
+          except IndexError as exc:
+              raise SystemExit("deployed SPA has no inline application script") from exc
+          Path("/tmp/oss-radar-dashboard-inline.js").write_text(inline)
+          print("Verified deployed dashboard SPA shell")
+          PY
+          node --check /tmp/oss-radar-dashboard-inline.js
+
+      - name: Deploy isolated pipeline smoke job
+        env:
+          PIPELINE_IMAGE: ${{ steps.images.outputs.pipeline_image }}
+        shell: bash
+        run: |
+          gcloud run jobs update "${SMOKE_JOB}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --image="${PIPELINE_IMAGE}" \
+            --remove-env-vars="GIT_SHA"
+
+      - name: Execute isolated pipeline smoke
+        shell: bash
+        run: |
+          # This permanent canary has a dedicated no-role identity, DuckDB /tmp warehouse,
+          # no secrets, dry-run GitHub behavior, and the optional LLM disabled.
+          gcloud run jobs execute "${SMOKE_JOB}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --wait
+
+      - name: Deploy production pipeline job
+        id: pipeline
+        env:
+          PIPELINE_IMAGE: ${{ steps.images.outputs.pipeline_image }}
+        shell: bash
+        run: |
+          gcloud run jobs update "${PIPELINE_JOB}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --image="${PIPELINE_IMAGE}" \
+            --remove-env-vars="GIT_SHA" \
+            --update-labels="git_sha=${GITHUB_SHA}"
+
+      - name: Verify pipeline provenance
+        env:
+          PIPELINE_IMAGE: ${{ steps.images.outputs.pipeline_image }}
+        shell: bash
+        run: |
+          job="$(
+            gcloud run jobs describe "${PIPELINE_JOB}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json
+          )"
+          JOB_JSON="${job}" python - <<'PY'
+          import json
+          import os
+
+          job = json.loads(os.environ["JOB_JSON"])
+          expected_sha = os.environ["GITHUB_SHA"]
+          expected_image = os.environ["PIPELINE_IMAGE"]
+          container = job["spec"]["template"]["spec"]["template"]["spec"]["containers"][0]
+          actual_image = container.get("image")
+          actual_label = job.get("metadata", {}).get("labels", {}).get("git_sha")
+          runtime_env = {item.get("name") for item in container.get("env", [])}
+          if actual_image != expected_image:
+              raise SystemExit(
+                  f"pipeline image {actual_image!r} does not match {expected_image!r}"
+              )
+          if actual_label != expected_sha:
+              raise SystemExit("pipeline git_sha label does not match the deployed commit")
+          if "GIT_SHA" in runtime_env:
+              raise SystemExit("legacy runtime GIT_SHA still overrides image provenance")
+          print(f"Verified pipeline configuration at {expected_sha}")
+          PY
+
+      - name: Promote verified dashboard revision
+        env:
+          DASHBOARD_URL: ${{ steps.dashboard.outputs.service_url }}
+        shell: bash
+        run: |
+          gcloud run services update-traffic "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --to-tags="candidate=100"
+          health="$(curl --fail --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            --max-time 20 "${DASHBOARD_URL}/healthz")"
+          HEALTH_JSON="${health}" python - <<'PY'
+          import json
+          import os
+
+          health = json.loads(os.environ["HEALTH_JSON"])
+          expected = os.environ["GITHUB_SHA"]
+          if health.get("status") != "ok" or health.get("git_sha") != expected:
+              raise SystemExit(
+                  f"production traffic did not reach expected commit {expected}: {health}"
+              )
+          print(f"Production traffic verified at {expected}")
+          PY
+          gcloud run services update-traffic "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --remove-tags="candidate"
+
+      - name: Roll back a partial release
+        if: ${{ (failure() || cancelled()) && steps.previous.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          PREVIOUS_PIPELINE_IMAGE: ${{ steps.previous.outputs.pipeline_image }}
+          PREVIOUS_GIT_SHA: ${{ steps.previous.outputs.git_sha }}
+          PREVIOUS_DASHBOARD_REVISION: ${{ steps.previous.outputs.dashboard_revision }}
+          PREVIOUS_RUNTIME_SHA_PRESENT: ${{ steps.previous.outputs.pipeline_runtime_sha_present }}
+          PREVIOUS_RUNTIME_SHA: ${{ steps.previous.outputs.pipeline_runtime_sha }}
+          PREVIOUS_DASHBOARD_SHA_PRESENT: ${{ steps.previous.outputs.dashboard_sha_present }}
+          PREVIOUS_DASHBOARD_SHA: ${{ steps.previous.outputs.dashboard_sha }}
+          PREVIOUS_CANDIDATE_REVISION: ${{ steps.previous.outputs.candidate_revision }}
+        shell: bash
+        run: |
+          echo "Restoring the release captured before this workflow."
+          rollback_failed=0
+          if [[ "${PREVIOUS_RUNTIME_SHA_PRESENT}" == "true" ]]; then
+            runtime_args=(--update-env-vars="GIT_SHA=${PREVIOUS_RUNTIME_SHA}")
+          else
+            runtime_args=(--remove-env-vars="GIT_SHA")
+          fi
+          if ! gcloud run jobs update "${PIPELINE_JOB}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --image="${PREVIOUS_PIPELINE_IMAGE}" \
+            "${runtime_args[@]}" \
+            --update-labels="git_sha=${PREVIOUS_GIT_SHA}"; then
+            echo "Pipeline rollback failed." >&2
+            rollback_failed=1
+          fi
+          if [[ -n "${PREVIOUS_CANDIDATE_REVISION}" ]]; then
+            candidate_args=(--update-tags="candidate=${PREVIOUS_CANDIDATE_REVISION}")
+          else
+            candidate_args=(--remove-tags="candidate")
+          fi
+          if ! gcloud run services update-traffic "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            "${candidate_args[@]}" \
+            --to-revisions="${PREVIOUS_DASHBOARD_REVISION}=100"; then
+            echo "Dashboard traffic/tag rollback failed." >&2
+            rollback_failed=1
+          fi
+          if [[ "${PREVIOUS_DASHBOARD_SHA_PRESENT}" == "true" ]]; then
+            dashboard_label_args=(--update-labels="git_sha=${PREVIOUS_DASHBOARD_SHA}")
+          else
+            dashboard_label_args=(--remove-labels="git_sha")
+          fi
+          if ! gcloud run services update "${DASHBOARD_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            "${dashboard_label_args[@]}"; then
+            echo "Dashboard metadata rollback failed." >&2
+            rollback_failed=1
+          fi
+          exit "${rollback_failed}"
+
+      - name: Deployment summary
+        env:
+          DASHBOARD_URL: ${{ steps.dashboard.outputs.service_url }}
+          DASHBOARD_REVISION: ${{ steps.dashboard.outputs.revision }}
+        shell: bash
+        run: |
+          {
+            echo "### Production deployment"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Dashboard: ${DASHBOARD_URL}"
+            echo "- Dashboard revision: \`${DASHBOARD_REVISION}\`"
+            echo "- Pipeline image: \`${{ steps.images.outputs.pipeline_image }}\`"
+            echo "- Dashboard image: \`${{ steps.images.outputs.dashboard_image }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

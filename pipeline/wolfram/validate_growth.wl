@@ -315,7 +315,8 @@ nPass = Length[Select[detChecks, #["pass"] &]];
 rule[]; Print[" VERDICT"]; rule[];
 Print["   deterministic cross-checks : ", nPass, " / ", Length[detChecks], " reproduced to <1e-6"];
 Print["   resampling demonstrations  : permutation p<0.001, bootstrap CI excludes 0 (consistent)"];
-Print["   retired 0.74/0.70 headline : a centered-MA lookahead leak (see docs/VALIDATION.md)"];
+Print["   retired historical 0.740 : not the controlled ablation (see docs/VALIDATION.md)"];
+Print["   reproduced ablation      : centered 0.702 -> causal 0.582 -> group 0.363"];
 If[detFails =!= {}, Print["   FAILURES:"];
   Do[Print["     - ", f["stat"], "  computed ", fmt[f["computed"], 8], " vs ", fmt[f["expected"], 8]],
      {f, detFails}]];
@@ -342,8 +343,8 @@ mdHeader = StringJoin[
   "against the Python harness (`docs/validation_results.json`). Deterministic stats must match to\n",
   "<1e-6. Educational companion to [`VALIDATION.md`](VALIDATION.md).\n\n",
   "**Verdict:** ", ToString[nPass], "/", ToString[Length[detChecks]],
-  " deterministic checks reproduced. The retired **0.74/0.70** headline was a centered-MA\n",
-  "lookahead leak; the honest numbers are **0.582 same-package / 0.363 package-disjoint**.\n\n---\n\n"];
+  " deterministic checks reproduced. The retired historical **0.740** headline is not this\n",
+  "controlled ablation; the harness reproduces centered-MA **0.702 -> 0.582 causal -> 0.363 package-disjoint**.\n\n---\n\n"];
 Export[FileNameJoin[{outDir, "validation_steps.md"}], mdHeader <> StringRiffle[$md, "\n"], "Text"];
 
 Print["   wrote: validation_steps.md, wolfram_crosscheck.json, wolfram_freshness.json -> ", outDir];

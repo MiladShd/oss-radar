@@ -1,7 +1,7 @@
 """ImprovementScientist agent — proposes new model features and opens a PR when they help.
 
-Closing the loop: the agent runs offline experiments over the candidate feature catalog,
-and when a candidate measurably lifts the growth model's held-out Spearman it opens a PR
+Closing the loop: the agent runs nested, development-only experiments over the candidate feature catalog,
+and when a candidate measurably lifts the growth model's inner-selection Spearman it opens a PR
 enabling it in ``active_features.json``. It only *proposes* — the change reaches the running
 model only after CI, the PR-preview re-run, and a merge. Safe self-improvement by design.
 """
@@ -46,7 +46,8 @@ def run_improver(ctx: AgentContext, train_df: pd.DataFrame | None, active_downlo
         for r in results
     )
     ctx.record(AGENT, "feature_experiment", "ok",
-               f"Tested {len(results)} candidate features against held-out Spearman: {summary}.")
+               f"Tested {len(results)} candidate features with nested development-only "
+               f"Spearman selection: {summary}.")
 
     best = best_candidate(results, margin)
     if not best:
@@ -63,9 +64,10 @@ def run_improver(ctx: AgentContext, train_df: pd.DataFrame | None, active_downlo
     content = json.dumps(with_candidate(best["candidate"]), indent=2) + "\n"
     body = (
         f"The **ImprovementScientist** agent measured that adding the `{best['candidate']}` feature lifts the "
-        f"growth model's held-out Spearman from **{best['base']:.3f} → {best['new']:.3f}** "
+        f"growth model's nested development-selection Spearman from "
+        f"**{best['base']:.3f} → {best['new']:.3f}** "
         f"(Δ {best['delta']:+.3f}).\n\nThis PR enables it in `active_features.json`. CI and the PR-preview bot "
-        f"will re-run the pipeline on this branch so you can confirm the lift before merging.\n\n"
+        "will independently run the governance test and leak gate on this branch before merge.\n\n"
         f"### Experiment\n{_experiment_table(results)}\n\n"
         "<sub>Automated proposal by the OSS Radar self-improvement agent.</sub>"
     )

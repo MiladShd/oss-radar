@@ -64,7 +64,20 @@ class Warehouse(ABC):
     def insert_rows(self, table: str, rows: list[dict]) -> int: ...
 
     @abstractmethod
-    def query_df(self, sql: str) -> pd.DataFrame: ...
+    def upsert_rows(self, table: str, rows: list[dict], key_columns: list[str]) -> int:
+        """Insert rows, replacing any existing rows with the same natural key."""
+        ...
+
+    @abstractmethod
+    def query_df(
+        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None
+    ) -> pd.DataFrame:
+        """Run a read query with optional positional parameters.
+
+        Both supported backends use ``?`` placeholders. Keeping values outside
+        the SQL string makes public read paths straightforward to audit.
+        """
+        ...
 
     @abstractmethod
     def truncate(self, table: str) -> None: ...
@@ -77,3 +90,26 @@ class Warehouse(ABC):
     def count(self, table: str) -> int:
         df = self.query_df(f"SELECT COUNT(*) AS n FROM {table}")
         return int(df.iloc[0]["n"]) if not df.empty else 0
+
+    def prepare_upsert_rows(
+        self, table: str, rows: list[dict], key_columns: list[str],
+    ) -> list[dict]:
+        """Validate an upsert and collapse duplicate keys in the incoming batch.
+
+        Public download APIs occasionally revise recent dates. Keeping the last value in the
+        batch lets those corrections replace the stored value without accumulating duplicate
+        package-days.
+        """
+        if table not in S.TABLES:
+            raise ValueError(f"unknown table: {table}")
+        columns = {name for name, _ in S.TABLES[table]}
+        if not key_columns or any(key not in columns for key in key_columns):
+            raise ValueError(f"invalid upsert key for {table}: {key_columns}")
+
+        latest: dict[tuple, dict] = {}
+        for row in self.prepare_rows(table, rows):
+            key = tuple(row.get(column) for column in key_columns)
+            if any(value is None for value in key):
+                raise ValueError(f"upsert key cannot contain NULL for {table}: {key_columns}")
+            latest[key] = row
+        return list(latest.values())

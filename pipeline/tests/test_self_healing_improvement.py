@@ -1,14 +1,21 @@
 """Self-healing (ingest retry/carry-forward) and self-improvement (feature experiments)."""
 
+import json
 from datetime import date
 
 import numpy as np
 import pandas as pd
 
-from oss_radar.config.active_features import active_download_features, with_candidate
-from oss_radar.features import DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
+from oss_radar.config.active_features import CONFIG_PATH, active_download_features, with_candidate
+from oss_radar.features import ALL_DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
 from oss_radar.ingest.healing import _carry_forward, identify_failures
-from oss_radar.models.experiment import best_candidate, evaluate_candidates
+from oss_radar.models.evaluation import date_grouped_train_validation_test
+from oss_radar.models.experiment import (
+    _development_frame,
+    best_candidate,
+    evaluate_candidates,
+    validate_feature_candidate,
+)
 from oss_radar.warehouse.duckdb_backend import DuckDBWarehouse
 
 
@@ -33,6 +40,16 @@ def test_experiment_detects_useful_feature():
     assert by["recent_share"]["delta"] > by["dow_volatility_7"]["delta"]
     winner = best_candidate(results, margin=0.05)
     assert winner is not None and winner["candidate"] == "recent_share"
+    assert winner["selection"] == "nested-development-only"
+
+
+def test_experiment_never_reads_outer_governance_test_dates():
+    df = _train_df()
+    outer = date_grouped_train_validation_test(df)
+    development = _development_frame(df)
+
+    assert set(development["feature_date"]).isdisjoint(set(outer.test["feature_date"]))
+    assert len(development) == len(outer.train) + len(outer.validation)
 
 
 def test_no_proposal_when_nothing_helps():
@@ -48,11 +65,37 @@ def test_no_proposal_when_nothing_helps():
     assert best_candidate(results, margin=0.05) is None
 
 
-def test_active_features_default_and_candidate_toggle():
-    assert active_download_features() == list(DOWNLOAD_FEATURES)  # json ships with defaults
+def test_feature_pr_validation_reproduces_one_allowlisted_addition():
+    frame = _train_df()
+    base = {"download": ["log_d7", "velocity"], "risk": ["log_stars"]}
+    head = {"download": ["log_d7", "velocity", "recent_share"], "risk": ["log_stars"]}
+
+    result = validate_feature_candidate(frame, base, head, margin=0.05, seed=1)
+
+    assert result is not None
+    assert result["candidate"] == "recent_share"
+
+
+def test_feature_pr_validation_refuses_to_skip_on_thin_data():
+    frame = _train_df(n=100)
+    base = {"download": ["log_d7", "velocity"], "risk": ["log_stars"]}
+    head = {"download": ["log_d7", "velocity", "recent_share"], "risk": ["log_stars"]}
+
+    try:
+        validate_feature_candidate(frame, base, head, margin=0.01, seed=1)
+    except ValueError as exc:
+        assert "refusing to skip" in str(exc)
+    else:
+        raise AssertionError("thin feature validation unexpectedly passed")
+
+
+def test_active_features_config_and_candidate_toggle():
+    configured = json.loads(CONFIG_PATH.read_text())["download"]
+    expected = [f for f in configured if f in ALL_DOWNLOAD_FEATURES]
+    assert active_download_features() == expected
     cfg = with_candidate("recent_share")
     assert "recent_share" in cfg["download"]
-    assert cfg["download"][:len(DOWNLOAD_FEATURES)] == list(DOWNLOAD_FEATURES)
+    assert cfg["download"][:len(expected)] == expected
 
 
 # --- self-healing ---

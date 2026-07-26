@@ -5,8 +5,9 @@ the daily series so they are identically distributed between historical training
 latest scoring row. The label is the log-growth of downloads over a 70-day horizon (~10-week
 momentum) on a 28-day-smoothed series — far more predictable than raw 7-day growth. Leak-free
 held-out skill is causal same-package R^2 ~0.582 (Spearman ~0.790) and package-disjoint
-"unseen-package" R^2 ~0.363 (Spearman ~0.683); the ~0.74/0.70 headline is RETIRED — it was a
-centered-MA lookahead leak (see docs/VALIDATION.md). Arguably the more useful signal.
+"unseen-package" R^2 ~0.363 (Spearman ~0.683). The retired historical ~0.740 headline is not
+the controlled ablation; the harness reproduces centered ~0.702 versus causal ~0.582
+(see docs/VALIDATION.md). Arguably the more useful signal.
 
 Risk model (cross-sectional): maintenance / popularity / security features from the latest
 snapshot, with a transparent ``at_risk_label`` (documented in docs/METHODOLOGY.md).
@@ -67,8 +68,9 @@ RISK_FEATURES = [
 
 # Forecasting 70-day momentum on a 28-day-smoothed series, with multi-horizon trend features,
 # is genuinely predictable (leak-free held-out R^2 ~0.582 same-package / ~0.363 package-disjoint,
-# Spearman ~0.790 / ~0.683; the ~0.74/0.70 headline is RETIRED — a centered-MA lookahead leak,
-# see docs/VALIDATION.md) without the trivial "big stays big" volume prediction. The 180-day
+# Spearman ~0.790 / ~0.683; controlled centered-MA ablation R^2 ~0.702, with the historical
+# ~0.740 headline retired; see docs/VALIDATION.md) without the trivial "big stays big" volume
+# prediction. The 180-day
 # pypistats window caps how long the horizon can go.
 SMOOTH_WINDOW = 28
 GROWTH_HORIZON = 70
@@ -213,7 +215,10 @@ def _num(v):
 
 
 def _at_risk_label(r: pd.Series) -> int:
-    sev = r.get("max_severity")
+    # Severity must describe an advisory first published in the same recent window as
+    # ``vuln_new_28d``. Lifetime severity would relabel a package forever because of an old,
+    # already-remediated advisory.
+    sev = r.get("max_severity_new_28d")
     sev = sev if isinstance(sev, str) else ""
     recent_high_vuln = (_num(r.get("vuln_new_28d")) or 0) > 0 and sev in ("HIGH", "CRITICAL")
     abandoned = (r.get("archived") is True) or (isinstance(r.get("status"), str) and bool(r.get("status")))

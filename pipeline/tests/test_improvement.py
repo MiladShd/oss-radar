@@ -7,6 +7,8 @@ import pandas as pd
 
 from oss_radar.features.forward import build_forward_risk_labels, choose_risk_training
 from oss_radar.models.drift import _psi, compute_prediction_drift
+from oss_radar.models.evaluation import risk_holdout_mask
+from oss_radar.models.risk import risk_cv
 
 
 def _preds(scores, labels):
@@ -60,7 +62,7 @@ def _history(n=30, span_days=20, n_escalating=10):
 
 
 def test_forward_labels_capture_escalation():
-    hist = _history(n=30, span_days=20, n_escalating=10)
+    hist = _history(n=30, span_days=14, n_escalating=10)
     fwd = build_forward_risk_labels(hist, horizon_days=14)
     assert len(fwd) == 30
     assert int(fwd["at_risk_label"].sum()) == 10  # exactly the vuln-increasing packages
@@ -71,12 +73,65 @@ def test_forward_skipped_when_history_too_short():
     assert build_forward_risk_labels(hist, horizon_days=14).empty
 
 
+def test_forward_labels_require_an_exact_horizon_snapshot():
+    # A day-15 observation must not silently become a variable-length "14-day" outcome.
+    hist = _history(n=30, span_days=15, n_escalating=10)
+    assert build_forward_risk_labels(hist, horizon_days=14).empty
+
+
+def test_forward_labels_roll_across_every_eligible_day_at_fixed_horizon():
+    start = date(2026, 1, 1)
+    rows = []
+    for package, escalation_day in (("safe", None), ("risky", 16)):
+        for offset in range(20):
+            rows.append({
+                "name": package, "category": "llm", "snapshot_date": start + timedelta(days=offset),
+                "vuln_count": int(escalation_day is not None and offset >= escalation_day),
+                "downloads_7d": 1000, "days_since_last_release": 10,
+                "archived": False, "status": None,
+            })
+    frame = build_forward_risk_labels(pd.DataFrame(rows), horizon_days=14)
+    # Days 0..5 each have a day >= anchor+14, yielding six labels per package rather than one.
+    assert len(frame) == 12
+    assert frame.groupby("name").size().to_dict() == {"risky": 6, "safe": 6}
+    # Only risky anchors whose fixed 14-day outcome reaches day 16 should escalate.
+    assert int(frame["at_risk_label"].sum()) == 4
+
+
 def test_choose_risk_training_switches_mode():
     heuristic = pd.DataFrame({"name": ["a"], "at_risk_label": [0]})
     short = _history(n=30, span_days=5)
     frame, mode = choose_risk_training(heuristic, short, horizon_days=14, min_rows=25)
     assert mode == "heuristic" and frame is heuristic
 
-    long = _history(n=30, span_days=20, n_escalating=10)
+    long = _history(n=30, span_days=14, n_escalating=10)
     frame2, mode2 = choose_risk_training(heuristic, long, horizon_days=14, min_rows=25)
     assert mode2 == "forward-outcome" and len(frame2) == 30
+    assert frame2["label_version"].nunique() == 1
+    assert set(
+        pd.to_datetime(frame2["outcome_date"]) - pd.to_datetime(frame2["feature_date"])
+    ) == {pd.Timedelta(days=14)}
+
+
+def test_risk_validation_keeps_each_package_in_one_fold():
+    groups = np.array([f"pkg{i}" for i in range(10) for _ in range(3)])
+    labels = np.array([i % 2 for i in range(10) for _ in range(3)])
+    cv, cv_groups = risk_cv(labels, groups, seed=7)
+    assert cv_groups is groups
+    for train_idx, test_idx in cv.split(np.zeros(len(labels)), labels, cv_groups):
+        assert set(groups[train_idx]).isdisjoint(groups[test_idx])
+
+
+def test_risk_holdout_is_stable_and_package_disjoint():
+    frame = pd.DataFrame({
+        "name": [f"pkg{i}" for i in range(100) for _ in range(2)],
+        "at_risk_label": [i % 2 for i in range(100) for _ in range(2)],
+    })
+    first = risk_holdout_mask(frame)
+    shuffled = frame.sample(frac=1.0, random_state=5)
+    second = risk_holdout_mask(shuffled)
+
+    reserved = set(frame.loc[first, "name"])
+    assert 10 <= len(reserved) <= 30
+    assert reserved == set(shuffled.loc[second, "name"])
+    assert reserved.isdisjoint(set(frame.loc[~first, "name"]))

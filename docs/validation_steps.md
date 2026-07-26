@@ -1,13 +1,13 @@
 # Growth-model validation - step-by-step (Wolfram Language)
 
-*Generated 2026-06-21T19:56:22Z by `pipeline/wolfram/validate_growth.wl` on 15.0.0 for Mac OS X ARM (64-bit) (May 26, 2026).*
+*Generated 2026-07-26T18:05:09Z by `pipeline/wolfram/validate_growth.wl` on 15.0.0 for Mac OS X ARM (64-bit) (May 26, 2026).*
 
 Every statistic below is **recomputed from the dumped held-out predictions** and cross-checked
 against the Python harness (`docs/validation_results.json`). Deterministic stats must match to
 <1e-6. Educational companion to [`VALIDATION.md`](VALIDATION.md).
 
-**Verdict:** 9/9 deterministic checks reproduced. The retired **0.74/0.70** headline was a centered-MA
-lookahead leak; the honest numbers are **0.582 same-package / 0.363 package-disjoint**.
+**Verdict:** 9/9 deterministic checks reproduced. The retired historical **0.740** headline is not this
+controlled ablation; the harness reproduces centered-MA **0.702 → 0.582 causal → 0.363 package-disjoint**.
 
 ---
 
@@ -189,4 +189,3 @@ result:  95% CI R^2 ~ [0.383, 0.712]   (harness [0.371, 0.720]; both exclude 0 -
 ```
 
 **Cross-check vs Python harness:** computed `0.57784563` vs harness `0.58115166`  (|delta| = 3.31e-3) - **INFO  (resampling - not an exact-match assertion)**
-

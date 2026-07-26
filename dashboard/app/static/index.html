@@ -60,6 +60,9 @@ nav.tabs button.on{color:var(--teal);border-color:var(--line2);background:var(--
 .runbar{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .pill{border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:999px}
 .pill .ok{color:var(--teal)} .pill .warn{color:var(--amber)} .pill .err{color:var(--red)}
+.first-run{margin:14px 0 0;border:1px solid var(--amber);background:rgba(255,179,71,.07);
+  border-radius:12px;padding:13px 15px;color:var(--muted);font-size:13px;line-height:1.55}
+.first-run b{color:var(--ink)} .first-run code{color:var(--amber);font-family:var(--mono)}
 
 /* kpis */
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
@@ -129,6 +132,15 @@ tr.row:hover td{background:var(--panel2)}
 .act .ag b{display:block;color:var(--ink);font-size:12px}
 .act .body{flex:1;font-size:13px;color:var(--ink)}
 .act .body small{color:var(--muted);font-family:var(--mono);font-size:11px}
+.health-banner{display:flex;align-items:center;gap:16px;border:1px solid var(--line);border-radius:14px;padding:18px;background:linear-gradient(180deg,var(--panel),var(--bg2));margin-bottom:18px}
+.health-badge{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.6px;border-radius:999px;padding:6px 12px;font-weight:700}
+.health-green{color:#06281f;background:var(--teal)} .health-yellow{color:#2a1607;background:var(--amber)} .health-red{color:#2a0d12;background:var(--red)} .health-unknown{color:var(--muted);border:1px solid var(--line2)}
+.health-title{font-size:19px;font-weight:600}
+.sys-log{border-top:1px solid var(--line)}
+.sys-row{display:grid;grid-template-columns:92px 90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.sys-row .src{font-family:var(--mono);color:var(--blue)}
+.sys-row .msg{color:var(--ink);line-height:1.45}
+.sys-row .ts{font-family:var(--mono);color:var(--muted);font-size:11px}
 .loading{color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px;text-align:center}
 .foot{margin-top:40px;color:var(--faint);font-family:var(--mono);font-size:11.5px;text-align:center;line-height:1.7}
 @media(max-width:880px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}nav.tabs button{padding:8px 9px}}
@@ -181,6 +193,7 @@ tr.row:hover td{background:var(--panel2)}
     </div>
     <nav class="tabs">
       <button data-tab="overview" class="on">Overview</button>
+      <button data-tab="system">System</button>
       <button data-tab="audit">Audit</button>
       <button data-tab="packages">Packages</button>
       <button data-tab="models">Model history</button>
@@ -200,9 +213,11 @@ tr.row:hover td{background:var(--panel2)}
       <h1>Which packages are gaining momentum — and which are becoming risky dependencies?</h1>
       <p>A self-managing pipeline ingests downloads, GitHub activity, dependency graphs, vulnerabilities and security-health
          metrics every day, then trains gradient-boosted models to forecast adoption momentum and dependency risk across the
-         Python&nbsp;/&nbsp;AI ecosystem. AI agents retrain the models, write the brief, and open a PR.</p>
+         Python&nbsp;/&nbsp;AI ecosystem. Seven deterministic operational roles validate each run, gate model promotion,
+         and publish the brief; Claude is optional and never participates in prediction.</p>
       <div class="runbar" id="runbar"></div>
     </div>
+    <div class="first-run" id="firstRun" hidden></div>
     <div class="kpis" id="kpis"></div>
     <div class="grid2">
       <div class="panel">
@@ -216,6 +231,25 @@ tr.row:hover td{background:var(--panel2)}
         <div id="risks"><div class="loading">scanning…</div></div>
       </div>
     </div>
+  </section>
+
+  <!-- SYSTEM -->
+  <section data-view="system" hidden>
+    <div class="hero"><h1 style="font-size:22px">System health</h1>
+      <p>Run history, error status, and the latest persisted pipeline and agent logs.</p></div>
+    <div id="sysBanner" class="health-banner"><div class="loading">checking system…</div></div>
+    <div class="kpis" id="sysKpis"></div>
+    <div class="grid2">
+      <div class="panel"><h3>Latest logs</h3>
+        <div class="sub" id="sysLogSub">pipeline and agent activity from the latest run</div>
+        <div id="sysLogs"><div class="loading">loading logs…</div></div></div>
+      <div class="panel"><h3>Issues</h3>
+        <div class="sub">errors and warnings across recent runs</div>
+        <div id="sysIssues"><div class="loading">checking issues…</div></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px;padding:6px 14px"><table>
+      <thead><tr><th>Run</th><th>Status</th><th class="num">Duration</th><th class="num">Packages</th><th class="num">Predictions</th><th>Git SHA</th></tr></thead>
+      <tbody id="sysRuns"></tbody></table></div>
   </section>
 
   <!-- PACKAGES -->
@@ -238,8 +272,9 @@ tr.row:hover td{background:var(--panel2)}
   <!-- MODELS -->
   <section data-view="models" hidden>
     <div class="hero"><h1 style="font-size:22px">Model improvement over time</h1>
-      <p>Every daily run retrains the growth and risk models and records held-out metrics. The champion/challenger gate only
-         promotes a model when it beats the previous champion — so this is the audit trail of how the intelligence improves.</p></div>
+      <p>Every daily run evaluates growth and risk challengers against fixed, time-aware evidence. Quality can move up or
+         down; only a challenger that clears the validation gate and beats the current champion is promoted. This chart is
+         the audit trail, not a promise of monotonic improvement.</p></div>
     <div class="panel"><h3>Held-out metric history</h3>
       <div class="sub">Growth model: Spearman rank correlation · Risk model: ROC-AUC · ◆ = promoted to champion</div>
       <canvas id="mchart" height="110"></canvas></div>
@@ -336,9 +371,10 @@ or: openai/openai-python" style="width:100%;background:var(--bg);border:1px soli
 
   <!-- AGENTS -->
   <section data-view="agents" hidden>
-    <div class="hero"><h1 style="font-size:22px">What the AI agents did</h1>
-      <p>Five agents manage the pipeline each day — they don't make the predictions, they run the system: checking ingestion
-         freshness, validating data quality, retraining and gating models, writing the brief, and opening the daily PR.</p></div>
+    <div class="hero"><h1 style="font-size:22px">What the operational agents did</h1>
+      <p>Seven role-scoped, deterministic agents manage the pipeline each day — they do not make predictions. They check
+         ingestion freshness, validate data quality, retrain and gate models, write the brief, and open the daily PR.
+         Claude may rewrite brief prose when configured; the data and scores remain deterministic.</p></div>
     <div class="panel"><div id="timeline"><div class="loading">loading activity…</div></div></div>
   </section>
 
@@ -352,16 +388,26 @@ or: openai/openai-python" style="width:100%;background:var(--bg);border:1px soli
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>n==null?"—":Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(n);
 const pct=n=>n==null?"—":(n>=0?"+":"")+(n*100).toFixed(1)+"%";
+const logPct=n=>n==null?"—":pct(Math.expm1(Number(n)));
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let PKGS=[], sortKey="momentum_score", sortAsc=false, REPO="MiladShd/oss-radar";
 
 function momColor(v){return v>=66?"var(--teal)":v<=40?"var(--amber)":"var(--blue)";}
 function riskColor(v){return v>=66?"var(--red)":v>=40?"var(--amber)":"var(--teal-d)";}
+function scopedReasons(p,scope){
+  const key=scope==="momentum"?"momentum_reasons":"risk_reasons";
+  const scoped=Array.isArray(p[key])?p[key].filter(Boolean):[];
+  if(scoped.length)return scoped.slice(0,2);
+  const legacy=Array.isArray(p.top_reasons)?p.top_reasons.filter(Boolean):[];
+  return scope==="momentum"?legacy.slice(0,2):legacy.slice(-2);
+}
 
 async function j(u){const r=await fetch(u);return r.json();}
 
 function tab(name){
   $$("nav.tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===name));
   $$("section[data-view]").forEach(s=>s.hidden=s.dataset.view!==name);
+  if(name==="system") loadSystem();
   if(name==="packages"&&!PKGS.length) loadPackages();
   if(name==="models") loadModels();
   if(name==="accuracy") loadBacktest();
@@ -375,7 +421,8 @@ const _as=$("#auditSelf"); if(_as) _as.onclick=selfAudit;
 
 function moverRow(p,scoreKey,colorFn,levelKey){
   const v=p[scoreKey]??0, lvl=p[levelKey]||"";
-  const reasons=(p.top_reasons||[]).slice(0,2).map(r=>`<span class="chip">${r}</span>`).join("");
+  const source=scopedReasons(p,scoreKey==="momentum_score"?"momentum":"risk");
+  const reasons=source.map(r=>`<span class="chip">${esc(r)}</span>`).join("");
   return `<div class="mvr" onclick='openDrawer(${JSON.stringify(p.name)})'>
     <div class="nm">${p.name}<small>${p.category||""}</small></div>
     <div style="flex:1">
@@ -388,6 +435,15 @@ function moverRow(p,scoreKey,colorFn,levelKey){
 
 async function loadOverview(){
   const o=await j("/api/overview");
+  const first=$("#firstRun");
+  if((o.data_state||"ready")!=="ready"){
+    first.hidden=false;
+    const state=o.data_state==="error"?"The warehouse could not be read.":"No pipeline data exists yet.";
+    first.innerHTML=`<b>${state}</b> Run <code>${esc(o.setup_command||"make demo")}</code>, then refresh.
+      Active warehouse: <code>${esc(o.warehouse||"check OSS_RADAR_DUCKDB_PATH")}</code>.`;
+  }else{
+    first.hidden=true;
+  }
   const lr=o.last_run||{};
   const cnt=lr.counts? (typeof lr.counts==="string"?JSON.parse(lr.counts):lr.counts):{};
   $("#runbar").innerHTML=[
@@ -406,6 +462,44 @@ async function loadOverview(){
   $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>run the pipeline to populate</div>";
 }
 
+function healthClass(s){return s==="green"?"health-green":s==="yellow"?"health-yellow":s==="red"?"health-red":"health-unknown";}
+function healthDot(s){return s==="green"||s==="ok"||s==="success"?"var(--teal)":s==="yellow"||s==="warning"?"var(--amber)":s==="red"||s==="error"?"var(--red)":"var(--faint)";}
+function dur(sec){return sec==null?"—":sec<60?sec.toFixed(1)+"s":(sec/60).toFixed(1)+"m";}
+function shortTs(ts){return ts?String(ts).replace("T"," ").replace("Z","").slice(0,16):"—";}
+
+async function loadSystem(){
+  const h=await j("/api/system-health");
+  const st=h.status||"unknown", latest=h.latest_run||{}, latestCounts=latest.counts||{};
+  $("#sysBanner").innerHTML=`<span class="health-badge ${healthClass(st)}">${esc(st)}</span>
+    <div><div class="health-title">${esc(h.headline||"system health unavailable")}</div>
+    <div class="mono" style="font-size:12px;color:var(--muted);margin-top:3px">latest run ${esc(latest.run_id||"—")} · ${shortTs(latest.finished_at||latest.started_at)}</div></div>`;
+  $("#sysKpis").innerHTML=[
+    ["days run",h.run_days??0,""],
+    ["total runs",h.total_runs??0,""],
+    ["errors",h.error_count??0,""],
+    ["warnings",h.warning_count??0,""],
+  ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
+  $("#sysLogSub").textContent=st==="green"?"green logs from the latest successful run":"latest persisted pipeline and agent logs";
+  const logRows=h.logs||[];
+  $("#sysLogs").innerHTML=logRows.length?`<div class="sys-log">${logRows.map(l=>`<div class="sys-row">
+    <div class="ts">${shortTs(l.ts)}</div>
+    <div class="src"><span class="dot" style="background:${healthDot(l.level)}"></span> ${esc(l.source)}</div>
+    <div class="msg">${esc(l.message)}</div>
+  </div>`).join("")}</div>`:"<div class='loading'>no logs yet</div>";
+  const issueRows=[...(h.issues||[]),...(h.warnings||[])];
+  $("#sysIssues").innerHTML=issueRows.length?`<div class="sys-log">${issueRows.map(i=>`<div class="sys-row">
+    <div class="ts">${shortTs(i.ts)}</div>
+    <div class="src"><span class="dot" style="background:${healthDot(i.status)}"></span> ${esc(i.source)}</div>
+    <div class="msg"><b>${esc(i.status)}</b> · ${esc(i.summary)}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(i.run_id||"")}</span></div>
+  </div>`).join("")}</div>`:`<div class="loading" style="color:var(--teal)">green — no persisted errors or warnings</div>`;
+  $("#sysRuns").innerHTML=(h.runs||[]).map(r=>{
+    const c=r.counts||{};
+    return `<tr><td class="mono">${esc(r.run_id)}</td><td><span class="dot" style="background:${healthDot(r.status)}"></span> ${esc(r.status)}</td>
+      <td class="num">${dur(r.duration_sec)}</td><td class="num">${c.packages??"—"}</td><td class="num">${c.predictions??"—"}</td>
+      <td class="mono" style="color:var(--muted)">${esc(r.git_sha||"—")}</td></tr>`;
+  }).join("")||`<tr><td colspan="6" class="loading">no runs recorded</td></tr>`;
+}
+
 async function loadPackages(){
   PKGS=await j("/api/packages");
   const cats=[...new Set(PKGS.map(p=>p.category))].filter(Boolean).sort();
@@ -417,7 +511,11 @@ $$("#ptable th").forEach(th=>th.onclick=()=>{const k=th.dataset.s;sortAsc=(sortK
 
 function renderTable(){
   const q=($("#search").value||"").toLowerCase(), cf=$("#catf").value;
-  let rows=PKGS.filter(p=>(!cf||p.category===cf)&&(p.name.toLowerCase().includes(q)));
+  let rows=PKGS.filter(p=>{
+    const searchable=[p.name,p.category,p.primary_language,...(p.capabilities||[]),...(p.github_topics||[])]
+      .filter(Boolean).join(" ").toLowerCase();
+    return (!cf||p.category===cf)&&searchable.includes(q);
+  });
   rows.sort((a,b)=>{let x=a[sortKey],y=b[sortKey];if(typeof x==="string")return sortAsc?x.localeCompare(y):y.localeCompare(x);
     return sortAsc?(x??-1)-(y??-1):(y??-1)-(x??-1);});
   $("#pbody").innerHTML=rows.map(p=>{
@@ -427,7 +525,7 @@ function renderTable(){
       <td class="pkg">${p.name}</td><td><span class="cat">${p.category||""}</span></td>
       <td class="num"><span class="badge ${mb}">${Math.round(p.momentum_score||0)}</span></td>
       <td class="num"><b class="r-${rl}">${Math.round(p.risk_score||0)}</b></td>
-      <td class="num" style="color:${(p.growth_pred_70d||0)>=0?'var(--teal)':'var(--amber)'}">${pct(p.growth_pred_70d)}</td>
+      <td class="num" style="color:${(p.growth_pred_70d||0)>=0?'var(--teal)':'var(--amber)'}">${logPct(p.growth_pred_70d)}</td>
       <td class="num">${fmt(p.stars)}</td><td class="num">${fmt(p.dependent_repos_count)}</td>
       <td class="num" style="color:${p.vuln_count>0?'var(--amber)':'var(--muted)'}">${p.vuln_count??0}</td></tr>`;
   }).join("")||`<tr><td colspan="8" class="loading">no matches</td></tr>`;
@@ -455,9 +553,13 @@ async function openDrawer(name){
     <div class="mono" style="color:var(--muted);font-size:12px">${p.category||""} · <a href="${repo}" target="_blank">${p.repo||"repo n/a"}</a></div>
     <div class="dscores">
       <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}</div>
-        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${pct(p.growth_pred_70d)}</div></div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${logPct(p.growth_pred_70d)}</div></div>
       <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}</div>
-        <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk</div></div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk · ${
+          p.risk_classifier_probability==null
+            ? "weighted composite with categorical safety floors"
+            : `60% composite (${Math.round(p.risk_composite_score||0)}) + 40% calibrated classifier (${Math.round(p.risk_classifier_probability*100)}), then categorical safety floors`
+        }</div></div>
     </div>
     <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:4px">Daily downloads (180d)</div>
     ${sparkline(d.downloads,"var(--teal)")||"<div class='mono' style='color:var(--faint);font-size:12px'>no series</div>"}
@@ -468,8 +570,13 @@ async function openDrawer(name){
          ["Bus factor (DDS)",p.bus_factor!=null?p.bus_factor.toFixed(2):"—"]]
         .map(([k,v])=>`<div class="metarow"><span>${k}</span><span>${v}</span></div>`).join("")}
     </div>
-    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:18px 0 6px">Why the model flagged it</div>
-    <div class="reasons">${(p.top_reasons||[]).map(r=>`<span class="chip">${r}</span>`).join("")||"—"}</div>`;
+    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:18px 0 6px">Momentum drivers (SHAP or persistence)</div>
+    <div class="reasons">${scopedReasons(p,"momentum").map(r=>`<span class="chip">${esc(r)}</span>`).join("")||"—"}</div>
+    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:18px 0 6px">Risk composite drivers</div>
+    <div class="reasons">${scopedReasons(p,"risk").map(r=>`<span class="chip">${esc(r)}</span>`).join("")||"—"}</div>
+    <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin:18px 0 6px">Taxonomy</div>
+    <div class="reasons">${[...(p.capabilities||[]),...(p.github_topics||[])]
+      .map(r=>`<span class="chip">${esc(r)}</span>`).join("")||"<span class='chip'>"+esc(p.category||"uncategorized")+"</span>"}</div>`;
 }
 function closeDrawer(){$("#scrim").classList.remove("on");$("#drawer").classList.remove("on");}
 document.onkeydown=e=>{if(e.key==="Escape")closeDrawer();}
@@ -479,7 +586,9 @@ async function loadModels(){
   const rows=await j("/api/models");
   const series={};
   rows.forEach(r=>{const key=r.model_name+":"+r.metric_name;(series[key]=series[key]||[]).push(r);});
-  const want={"growth:spearman":["Growth · Spearman","#2ee6c4"],"risk:auc":["Risk · AUC","#ffb347"]};
+  const riskMetric=series["risk:group_auc"]?"risk:group_auc":"risk:auc";
+  const riskLabel=riskMetric==="risk:group_auc"?"Risk · group AUC":"Risk · AUC (legacy)";
+  const want={"growth:spearman":["Growth · Spearman","#2ee6c4"],[riskMetric]:[riskLabel,"#ffb347"]};
   const datasets=Object.entries(want).filter(([k])=>series[k]).map(([k,[lbl,col]])=>({
     label:lbl,borderColor:col,backgroundColor:col+"22",tension:.3,pointRadius:5,
     pointStyle:series[k].map(r=>r.is_champion?"rectRot":"circle"),
@@ -504,6 +613,13 @@ function axes(xt,yt,xmin,xmax,ymin,ymax){
   if(xmin!=null){x.min=xmin;x.max=xmax;} if(ymin!=null){y.min=ymin;y.max=ymax;}
   return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x,y}};
 }
+function numericAxes(xt,yt,xmin,xmax,ymin,ymax){
+  const o=axes(xt,yt,xmin,xmax,ymin,ymax);
+  o.parsing=false;
+  o.scales.x.type="linear";
+  o.scales.y.type="linear";
+  return o;
+}
 async function loadBacktest(){
   const d=await j("/api/backtest"); const g=d.growth, r=d.risk;
   btCharts.forEach(c=>c&&c.destroy()); btCharts=[];
@@ -524,13 +640,14 @@ async function loadBacktest(){
   btCharts.push(new Chart($("#btScatter"),{data:{datasets:[
     {type:"scatter",data:sc.map(p=>({x:p[0],y:p[1]})),backgroundColor:"rgba(46,230,196,0.45)",pointRadius:3},
     {type:"line",data:[{x:lo,y:lo},{x:hi,y:hi}],borderColor:"#7d93a3",borderDash:[6,4],borderWidth:1.5,pointRadius:0}
-  ]},options:axes("predicted","actual",lo,hi,lo,hi)}));
+  ]},options:numericAxes("predicted","actual",lo,hi,lo,hi)}));
   if(r&&r.points&&r.points.length){
     $("#btRocSub").textContent=`AUC ${r.auc==null?"n/a":r.auc} \u00b7 n=${r.n}, ${r.n_pos} at-risk`;
-    btCharts.push(new Chart($("#btRoc"),{data:{datasets:[
-      {type:"line",data:r.points.map(p=>({x:p[0],y:p[1]})),borderColor:"#ff5c6c",backgroundColor:"rgba(255,92,108,0.08)",borderWidth:2,pointRadius:0,fill:true},
-      {type:"line",data:[{x:0,y:0},{x:1,y:1}],borderColor:"#7d93a3",borderDash:[6,4],borderWidth:1.5,pointRadius:0}
-    ]},options:axes("false-positive rate","true-positive rate",0,1,0,1)}));
+    const rocPoints=r.points.map(p=>({x:+p[0],y:+p[1]})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+    btCharts.push(new Chart($("#btRoc"),{type:"line",data:{datasets:[
+      {label:"ROC",data:rocPoints,borderColor:"#ff5c6c",backgroundColor:"rgba(255,92,108,0.12)",borderWidth:2.5,pointRadius:2,pointHoverRadius:4,fill:"origin",stepped:"before",tension:0},
+      {label:"chance",data:[{x:0,y:0},{x:1,y:1}],borderColor:"#7d93a3",borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
+    ]},options:numericAxes("false-positive rate","true-positive rate",0,1,0,1)}));
   } else if($("#btRocSub")){ $("#btRocSub").textContent="insufficient at-risk samples yet"; }
 }
 

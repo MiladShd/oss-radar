@@ -1,10 +1,20 @@
 # Keep the Cloud Build upload small & clean.
+#!include:.gitignore
 .git/
 .github/
 .venv/
 venv/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 *.pyc
+*.egg-info/
+*.log
+.env
+*-key.json
+service-account*.json
+application_default_credentials.json
+terraform.tfvars
 *.duckdb
 *.duckdb.wal
 models_local/
@@ -17,6 +27,7 @@ infra/terraform/*.tfstate*
 .gcp_bootstrap.log
 .gcp_apis.log
 .venv_setup.log
+gha-creds-*.json
 .DS_Store
 .claude/
 docs/

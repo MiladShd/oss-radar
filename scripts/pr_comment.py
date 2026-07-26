@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from oss_radar.warehouse import get_warehouse
@@ -19,6 +20,18 @@ def reasons(val):
 
 def growth_pred(row):
     return row.get("growth_pred_70d", row.get("growth_pred_7d"))
+
+
+def scoped_reasons(row, column, legacy_slice):
+    if column in row and row.get(column) is not None:
+        return reasons(row.get(column))
+    legacy = row.get("top_reasons")
+    if isinstance(legacy, str):
+        try:
+            legacy = json.loads(legacy)
+        except Exception:  # noqa: BLE001
+            legacy = []
+    return ", ".join(legacy_slice(legacy)) if isinstance(legacy, list) else ""
 
 
 def main() -> None:
@@ -38,10 +51,19 @@ def main() -> None:
         lines += [f"**Scored {len(preds)} packages.**", "", "### 🚀 Top momentum",
                   "| Package | Momentum | Δ70d | Why |", "|---|--:|--:|---|"]
         for _, r in mom.iterrows():
-            lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {growth_pred(r)*100:+.1f}% | {reasons(r['top_reasons'])} |")
+            change = math.expm1(float(growth_pred(r)))
+            why = scoped_reasons(r, "momentum_reasons", lambda value: value[:2])
+            lines.append(
+                f"| `{r['name']}` | {r['momentum_score']:.0f} | "
+                f"{change:+.1%} | {why} |"
+            )
         lines += ["", "### ⚠️ Top risk", "| Package | Risk | Level | Why |", "|---|--:|---|---|"]
         for _, r in risk.iterrows():
-            lines.append(f"| `{r['name']}` | {r['risk_score']:.0f} | {r['risk_level']} | {reasons(r['top_reasons'])} |")
+            why = scoped_reasons(r, "risk_reasons", lambda value: value[-2:])
+            lines.append(
+                f"| `{r['name']}` | {r['risk_score']:.0f} | "
+                f"{r['risk_level']} | {why} |"
+            )
     lines += ["", "<sub>Automated by the OSS Radar PR-preview workflow.</sub>"]
     Path("preview_comment.md").write_text("\n".join(lines))
     print("wrote preview_comment.md")
