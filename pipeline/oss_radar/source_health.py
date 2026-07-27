@@ -1,12 +1,15 @@
 """Shared operator guidance for source-health surfaces."""
 
 LOCAL_GITHUB_RECOVERY_GUIDANCE = (
-    'Run `export OSS_RADAR_GITHUB_TOKEN="$(gh auth token)"` before rerunning '
-    "to improve GitHub API rate limits."
+    "Inspect connector warnings for a renamed repository, provider error, or rate limit. "
+    'If logs show authentication/rate-limit errors, run `export '
+    'OSS_RADAR_GITHUB_TOKEN="$(gh auth token)"`; then rerun.'
 )
 CLOUD_GITHUB_RECOVERY_GUIDANCE = (
-    "Validate the enabled `oss-radar-github-token` Secret Manager version, then rerun "
-    "the pipeline using the recovery procedure in `docs/OPERATIONS.md`."
+    "Inspect connector warnings for a renamed repository, provider error, or rate limit. "
+    "Validate the enabled `oss-radar-github-token` Secret Manager "
+    "version only when logs show authentication/rate-limit errors, then rerun using "
+    "`docs/OPERATIONS.md`."
 )
 
 

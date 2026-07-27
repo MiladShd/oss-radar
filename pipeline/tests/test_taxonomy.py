@@ -81,6 +81,24 @@ def test_repo_overrides_are_well_formed():
         assert repo.count("/") == 1
         assert not repo.startswith("/")
         assert not repo.endswith("/")
+    assert {
+        package: REPO_OVERRIDES[package]
+        for package in (
+            "instructor",
+            "metagpt",
+            "pinecone-client",
+            "hnswlib",
+            "great-expectations",
+            "pandera",
+        )
+    } == {
+        "instructor": "567-labs/instructor",
+        "metagpt": "FoundationAgents/MetaGPT",
+        "pinecone-client": "pinecone-io/python-sdk",
+        "hnswlib": "nmslib/hnswlib",
+        "great-expectations": "fivetran/great_expectations",
+        "pandera": "unionai-oss/pandera",
+    }
 
 
 class _GitHubClient:
@@ -97,8 +115,8 @@ class _GitHubClient:
                 "topics": ["AI", "rag", 7, ""],
                 "language": "Python",
             }
-        if url.endswith("/repos/acme/tool/stats/commit_activity"):
-            return [{"total": 1}, {"total": 2}]
+        if url.endswith("/repos/acme/tool/stats/participation"):
+            return {"all": [0] * 50 + [1, 2]}
         raise AssertionError(f"unexpected GitHub request: {url}")
 
 
@@ -112,7 +130,7 @@ def test_github_topics_and_language_reuse_existing_repo_request():
     assert result["commit_count_4w"] == 3
     assert [url for url, _ in client.calls] == [
         f"{github.BASE}/repos/acme/tool",
-        f"{github.BASE}/repos/acme/tool/stats/commit_activity",
+        f"{github.BASE}/repos/acme/tool/stats/participation",
     ]
     assert github.parse_topics("ai,rag") == []
 

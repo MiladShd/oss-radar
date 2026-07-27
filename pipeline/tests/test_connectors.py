@@ -217,7 +217,7 @@ class _PartialGitHubClient:
                 "topics": ["mlops"],
                 "language": "Python",
             }
-        if url.endswith("/stats/commit_activity"):
+        if url.endswith("/stats/participation"):
             return None
         query = (params or {}).get("q", "")
         if "type:pr" in query:
@@ -242,6 +242,42 @@ def test_github_partial_success_retains_data_but_fails_overall_health():
     }
     assert result["_partial"] is True
     assert result["_ok"] is False
+
+
+class _RedirectedGitHubClient:
+    def __init__(self):
+        self.calls = []
+
+    def get_json(self, url: str, params: dict | None = None):
+        self.calls.append((url, params))
+        if url.endswith("/repos/old-org/widget"):
+            return {
+                "full_name": "new-org/widget",
+                "stargazers_count": 10,
+                "topics": ["mlops"],
+                "language": "Python",
+            }
+        if url.endswith("/repos/new-org/widget/stats/participation"):
+            return {"all": [0] * 48 + [1, 0, 2, 1]}
+        query = (params or {}).get("q", "")
+        if "repo:new-org/widget" in query:
+            return {"total_count": 1}
+        raise AssertionError(f"unexpected GitHub request: {url} {params}")
+
+
+def test_github_redirect_uses_canonical_repo_for_all_followup_calls():
+    client = _RedirectedGitHubClient()
+
+    result = github.fetch(client, "old-org", "widget")
+
+    assert result["_ok"] is True
+    assert result["canonical_repo"] == "new-org/widget"
+    assert result["commit_count_4w"] == 4
+    assert result["prs_merged_7d"] == 1
+    assert result["issues_opened_7d"] == 1
+    followups = client.calls[1:]
+    assert all("old-org/widget" not in str(call) for call in followups)
+    assert all("new-org/widget" in str(call) for call in followups)
 
 
 def test_collector_records_each_connector_status(monkeypatch):
