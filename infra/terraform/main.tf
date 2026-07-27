@@ -518,6 +518,11 @@ resource "google_cloud_run_v2_service" "dashboard" {
     prevent_destroy = true
     ignore_changes = [
       labels["git_sha"],
+      # The Cloud Run v2 API rehydrates an absent service-level scaling block
+      # as min/manual instance counts of zero. The provider then proposes
+      # removing those API defaults forever, so leave that unmanaged while
+      # retaining the revision-level scale-to-zero/max-two contract above.
+      scaling,
       template[0].containers[0].image,
     ]
   }
