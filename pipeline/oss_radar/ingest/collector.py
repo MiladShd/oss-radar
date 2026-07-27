@@ -53,9 +53,20 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
     ) or parse_owner_repo(md.get("repo_url")) or parse_owner_repo(eco_pkg.get("repo_url"))
     owner, repo = owner_repo if owner_repo else ("", "")
 
-    eco_repo = ecosystems.fetch_repo(http, owner, repo) if owner else {}
-    deps = depsdev.fetch(http, name, owner, repo)
     gh_d = github.fetch(gh, owner, repo) if owner else {}
+    canonical_repo = gh_d.get("canonical_repo")
+    canonical_parts = (
+        parse_owner_repo(f"github.com/{canonical_repo}")
+        if isinstance(canonical_repo, str)
+        else None
+    )
+    signal_owner, signal_repo = canonical_parts or (owner, repo)
+    eco_repo = (
+        ecosystems.fetch_repo(http, signal_owner, signal_repo)
+        if signal_owner
+        else {}
+    )
+    deps = depsdev.fetch(http, name, signal_owner, signal_repo)
 
     source_status = {
         "pypi_downloads": dl.get("_ok", False),
@@ -79,7 +90,11 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "category": category,
         "primary_category": primary_category,
         "capabilities": pkg.get("capabilities", []),
-        "repo": gh_d.get("canonical_repo") or (f"{owner}/{repo}" if owner else None),
+        "repo": (
+            f"{signal_owner}/{signal_repo}"
+            if signal_owner
+            else None
+        ),
         # downloads
         "downloads_1d": dl.get("downloads_1d"),
         "downloads_7d": dl.get("downloads_7d"),

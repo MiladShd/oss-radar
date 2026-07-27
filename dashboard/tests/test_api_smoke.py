@@ -322,6 +322,63 @@ def test_system_health_reports_green_run_and_logs(client):
     assert any(log["source"] == "DataEngineer" for log in body["logs"])
 
 
+def test_system_health_recovers_after_historical_failure_and_warning(client):
+    from dashboard.app import main, queries
+
+    wh = queries._wh_cache
+    previous_run = "previous-failed-run"
+    previous_time = _NOW - dt.timedelta(days=1)
+    wh.insert_rows("pipeline_runs", [{
+        "run_id": previous_run,
+        "started_at": previous_time,
+        "finished_at": previous_time,
+        "status": "failed",
+        "stages": {},
+        "counts": {},
+        "git_sha": "old",
+    }])
+    wh.insert_rows("agent_activity", [{
+        "run_id": previous_run,
+        "ts": previous_time,
+        "agent": "DataScientist",
+        "action": "monitor_drift",
+        "status": "warning",
+        "summary": "Historical drift warning.",
+        "artifact_url": "",
+    }])
+    main._response_cache.clear()
+
+    body = client.get("/api/system-health").json()
+
+    assert body["status"] == "green"
+    assert body["error_count"] == 0
+    assert body["warning_count"] == 0
+    assert body["total_runs"] == 2
+    assert any(run["run_id"] == previous_run for run in body["runs"])
+
+
+def test_system_health_reports_latest_run_warning(client):
+    from dashboard.app import main, queries
+
+    queries._wh_cache.insert_rows("agent_activity", [{
+        "run_id": RUN_ID,
+        "ts": _NOW,
+        "agent": "DataScientist",
+        "action": "monitor_drift",
+        "status": "warning",
+        "summary": "Current drift warning.",
+        "artifact_url": "",
+    }])
+    main._response_cache.clear()
+
+    body = client.get("/api/system-health").json()
+
+    assert body["status"] == "yellow"
+    assert body["error_count"] == 0
+    assert body["warning_count"] == 1
+    assert body["warnings"][0]["run_id"] == RUN_ID
+
+
 def test_system_health_detects_a_stale_success(client):
     from dashboard.app import main, queries
 

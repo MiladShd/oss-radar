@@ -8,11 +8,16 @@ preferred in the cloud job.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from oss_radar.ingest.http import HttpClient
 
 BASE = "https://api.github.com"
+_GITHUB_REPO_URL = re.compile(
+    r"https?://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:[/?#\s]|$)",
+    re.IGNORECASE,
+)
 
 
 def parse_topics(raw: object) -> list[str]:
@@ -20,6 +25,19 @@ def parse_topics(raw: object) -> list[str]:
     if not isinstance(raw, list):
         return []
     return [topic for topic in raw if isinstance(topic, str) and topic]
+
+
+def parse_moved_repository(repo_data: object) -> str | None:
+    """Extract a one-hop GitHub successor from an archived repository description."""
+    if not isinstance(repo_data, dict) or repo_data.get("archived") is not True:
+        return None
+    description = repo_data.get("description")
+    if not isinstance(description, str) or not re.search(
+        r"\bmov(?:e|ed|ing)\b", description, re.IGNORECASE
+    ):
+        return None
+    match = _GITHUB_REPO_URL.search(description)
+    return match.group(1) if match else None
 
 
 def make_client(token: str = "", timeout: int = 30) -> HttpClient:
@@ -55,6 +73,14 @@ def fetch(client: HttpClient, owner: str, repo: str, want_velocity: bool = True)
     }
 
     repo_data = client.get_json(f"{BASE}/repos/{owner}/{repo}")
+    if isinstance(repo_data, dict):
+        moved_from = repo_data.get("full_name") or f"{owner}/{repo}"
+        successor = parse_moved_repository(repo_data)
+        if successor and successor.casefold() != str(moved_from).casefold():
+            successor_data = client.get_json(f"{BASE}/repos/{successor}")
+            if isinstance(successor_data, dict):
+                out["repository_moved_from"] = str(moved_from)
+                repo_data = successor_data
     canonical_owner, canonical_repo = owner, repo
     if isinstance(repo_data, dict):
         components["repository"] = True
