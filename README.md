@@ -200,8 +200,8 @@ The repository now includes the pieces needed to operate the project rather than
 - **Honest evaluation:** package-disjoint validation, leak gates, challenger retention, and production run
   history are visible; the project does not claim that elapsed time alone makes model quality improve.
 
-Each new environment has two intentional administrative bootstrap steps: apply the documented GitHub
-pull-request-only ruleset bypass and provision GCP once. See [deployment](docs/DEPLOY.md),
+Each new environment has two intentional administrative bootstrap steps: apply the documented three-check
+GitHub ruleset and provision GCP once. See [deployment](docs/DEPLOY.md),
 [governance](docs/GOVERNANCE.md), and the [operations runbook](docs/OPERATIONS.md).
 
 ## ▶️ Run the demo

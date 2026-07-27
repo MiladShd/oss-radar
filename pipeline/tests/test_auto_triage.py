@@ -85,7 +85,7 @@ def test_checks_state_requires_every_expected_check():
     assert auto_triage.checks_state(skipped)[0] == "failed"
 
 
-def test_run_uses_admin_squash_and_fails_loudly_when_merge_fails(monkeypatch, capsys):
+def test_run_uses_normal_squash_and_fails_loudly_when_merge_fails(monkeypatch, capsys):
     pr = {
         "number": 42,
         "title": "OSS Radar daily brief \u2014 2026-07-20",
@@ -124,10 +124,54 @@ def test_run_uses_admin_squash_and_fails_loudly_when_merge_fails(monkeypatch, ca
     assert auto_triage.run("owner/repo") == 1
     assert merge_calls == [(
         "pr", "merge", "42", "--repo", "owner/repo",
-        "--admin", "--squash", "--delete-branch",
+        "--squash", "--delete-branch",
         "--match-head-commit", "a" * 40,
     )]
     assert "merge failures" in capsys.readouterr().out
+
+
+def test_run_updates_allowlisted_behind_branch_before_merging(monkeypatch, capsys):
+    pr = {
+        "number": 42,
+        "title": "OSS Radar daily brief \u2014 2026-07-20",
+        "headRefName": "oss-radar/daily-2026-07-20",
+        "baseRefName": "main",
+        "isDraft": False,
+        "isCrossRepository": False,
+        "author": {"login": "owner"},
+        "labels": _labels("oss-radar", "automated"),
+    }
+    detail = {
+        "files": [{"path": "reports/2026-07-20.md"}],
+        "statusCheckRollup": _passing_checks(),
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "BEHIND",
+        "headRefOid": "a" * 40,
+    }
+
+    def fake_gh(*args):
+        if args[:2] == ("pr", "list"):
+            return json.dumps([pr])
+        if args[:2] == ("pr", "view"):
+            return json.dumps(detail)
+        raise AssertionError(args)
+
+    calls = []
+
+    def fake_gh_try(*args):
+        calls.append(args)
+        return True, ""
+
+    monkeypatch.setattr(auto_triage, "gh", fake_gh)
+    monkeypatch.setattr(auto_triage, "gh_try", fake_gh_try)
+    monkeypatch.setattr(auto_triage, "dedupe_drift_issues", lambda repo: ([], []))
+
+    assert auto_triage.run("owner/repo") == 0
+    assert calls == [(
+        "api", "--method", "PUT", "repos/owner/repo/pulls/42/update-branch",
+        "-f", f"expected_head_sha={'a' * 40}",
+    )]
+    assert "waiting for checks" in capsys.readouterr().out
 
 
 def test_feature_merge_explicitly_dispatches_deploy(monkeypatch):
@@ -177,7 +221,7 @@ def test_feature_merge_explicitly_dispatches_deploy(monkeypatch):
     assert calls == [
         (
             "pr", "merge", "43", "--repo", "owner/repo",
-            "--admin", "--squash", "--delete-branch",
+            "--squash", "--delete-branch",
             "--match-head-commit", "b" * 40,
         ),
         (

@@ -34,11 +34,11 @@ health contract are part of the release.
 
 ## 2. One-time GitHub activation
 
-Required signed commits currently block the unsigned commits on bot-owned report branches. Keep signed commits
-enabled and install the narrower pull-request-only GitHub Actions bypass:
+Keep signed commits enabled and bind all three required checks to the GitHub Actions app. This
+personal-account repository intentionally has no ruleset bypass:
 
 ```bash
-# Read-only audit: saves a local snapshot and prints the proposed bypass-only diff.
+# Read-only audit: saves a local snapshot and prints the required-check diff.
 ./scripts/configure_github_rules.sh
 
 # External GitHub write: apply only after reviewing that diff.
@@ -52,15 +52,18 @@ gh api repos/MiladShd/oss-radar/rulesets/17938598 \
   --jq '{
     enforcement,
     signatures: any(.rules[]; .type == "required_signatures"),
-    actions_bypass: [
-      .bypass_actors[]
-      | select(.actor_type == "Integration" and .actor_id == 15368)
-      | .bypass_mode
+    bypass_actor_count: (.bypass_actors | length),
+    checks: [
+      .rules[]
+      | select(.type == "required_status_checks")
+      | .parameters.required_status_checks[]
+      | {context, integration_id}
     ]
   }'
 ```
 
-Expected: active enforcement, `signatures: true`, and exactly one `pull_request` bypass.
+Expected: active enforcement, `signatures: true`, zero bypass actors, and app-bound `analyze`, `preview`, and
+`test` checks with integration ID `15368`.
 
 After the operationalization change itself is on `main`, dispatch the checked-in maintainer:
 
@@ -71,10 +74,10 @@ gh run list --repo MiladShd/oss-radar --workflow=auto-triage.yml --limit=3
 gh run watch RUN_ID --repo MiladShd/oss-radar --exit-status
 ```
 
-As observed on 2026-07-26, the cleanup target is 32 green daily-report PRs and 10 exact duplicate drift issues.
-The maintainer lands the reports oldest-first, retains issue #27 as the canonical drift thread, and closes the
-other nine with backlinks. It deliberately does **not** merge failed feature PRs #29 or #37. Once this release is
-on `main`, close those stale proposals so a later qualifying experiment can recreate a clean branch:
+The maintainer refreshes an eligible behind branch and waits for all three checks before merging; it never
+bypasses the ruleset. Close pre-operationalization daily-report backlogs as superseded and let the newest report
+run through the current workflow. It deliberately does **not** merge failed feature PRs #29 or #37. Close those
+stale proposals so a later qualifying experiment can recreate a clean branch:
 
 ```bash
 # External GitHub writes.
