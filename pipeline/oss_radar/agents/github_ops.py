@@ -6,9 +6,27 @@ caller logs a skipped activity, so the pipeline never fails because GitHub is un
 
 from __future__ import annotations
 
+import base64
+
+import requests
 import structlog
 
 log = structlog.get_logger(__name__)
+
+_CREATE_COMMIT_MUTATION = """
+mutation CreateSignedCommit($input: CreateCommitOnBranchInput!) {
+  createCommitOnBranch(input: $input) {
+    commit {
+      oid
+      url
+      signature {
+        isValid
+        wasSignedByGitHub
+      }
+    }
+  }
+}
+"""
 
 
 def _repo(token: str, repo_full: str):
@@ -19,6 +37,57 @@ def _repo(token: str, repo_full: str):
     except Exception as exc:  # noqa: BLE001
         log.warning("github.repo_failed", repo=repo_full, error=str(exc))
         return None
+
+
+def _signed_file_commit(
+    token: str,
+    repo_full: str,
+    branch: str,
+    expected_head_oid: str,
+    path: str,
+    content: str,
+    message: str,
+) -> str:
+    """Create a GitHub-verified commit that adds or replaces one file."""
+    response = requests.post(
+        "https://api.github.com/graphql",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        json={
+            "query": _CREATE_COMMIT_MUTATION,
+            "variables": {
+                "input": {
+                    "branch": {
+                        "repositoryNameWithOwner": repo_full,
+                        "branchName": branch,
+                    },
+                    "expectedHeadOid": expected_head_oid,
+                    "message": {"headline": message},
+                    "fileChanges": {
+                        "additions": [{
+                            "path": path,
+                            "contents": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+                        }],
+                    },
+                },
+            },
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if errors := payload.get("errors"):
+        messages = "; ".join(str(error.get("message", "unknown GraphQL error"))
+                             for error in errors)
+        raise RuntimeError(messages)
+    commit = payload["data"]["createCommitOnBranch"]["commit"]
+    signature = commit.get("signature") or {}
+    if not signature.get("isValid") or not signature.get("wasSignedByGitHub"):
+        raise RuntimeError("GitHub did not return a valid GitHub-signed commit")
+    return commit["oid"]
 
 
 def open_issue(token: str, repo_full: str, title: str, body: str,
@@ -81,32 +150,42 @@ def close_open_issues(
 
 def open_daily_pr(token: str, repo_full: str, branch: str, report_path: str,
                   report_md: str, title: str, body: str) -> str | None:
-    """Create/refresh a branch with the daily report and open (or reuse) a PR."""
+    """Create/refresh a branch with a verified daily-report commit and a PR."""
     repo = _repo(token, repo_full)
     if not repo:
         return None
     try:
         base = repo.default_branch
         base_sha = repo.get_branch(base).commit.sha
-        # create branch if absent
+        existing_prs = list(repo.get_pulls(state="open", head=f"{repo.owner.login}:{branch}"))
+
+        # Daily branches are fully bot-owned. Reset before writing so retries remove any
+        # stale or unsigned commit and always compare exactly one report with current main.
         try:
-            repo.get_branch(branch)
+            ref = repo.get_git_ref(f"heads/{branch}")
+            ref.edit(sha=base_sha, force=True)
         except Exception:
             repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
 
-        # create or update the report file on the branch
-        try:
-            existing = repo.get_contents(report_path, ref=branch)
-            repo.update_file(report_path, f"chore: daily report {branch}", report_md,
-                             existing.sha, branch=branch)
-        except Exception:
-            repo.create_file(report_path, f"chore: daily report {branch}", report_md,
-                             branch=branch)
+        _signed_file_commit(
+            token,
+            repo_full,
+            branch,
+            base_sha,
+            report_path,
+            report_md,
+            f"chore: daily report {branch}",
+        )
 
         # open PR if one doesn't already exist for this branch
-        existing_prs = list(repo.get_pulls(state="open", head=f"{repo.owner.login}:{branch}"))
         if existing_prs:
-            return existing_prs[0].html_url
+            pr = existing_prs[0]
+            pr.edit(title=title, body=body, base=base, state="open")
+            try:
+                pr.add_to_labels("oss-radar", "automated")
+            except Exception:  # noqa: BLE001
+                pass
+            return pr.html_url
         pr = repo.create_pull(title=title, body=body, head=branch, base=base)
         try:
             pr.add_to_labels("oss-radar", "automated")
@@ -145,11 +224,15 @@ def open_file_pr(token: str, repo_full: str, branch: str, path: str, content: st
         except Exception:
             repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
 
-        try:
-            cur = repo.get_contents(path, ref=branch)
-            repo.update_file(path, f"feat: {title}", content, cur.sha, branch=branch)
-        except Exception:
-            repo.create_file(path, f"feat: {title}", content, branch=branch)
+        _signed_file_commit(
+            token,
+            repo_full,
+            branch,
+            base_sha,
+            path,
+            content,
+            f"feat: {title}",
+        )
 
         if existing_pr:
             pr = existing_pr

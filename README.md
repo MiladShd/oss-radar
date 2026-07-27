@@ -195,6 +195,8 @@ The repository now includes the pieces needed to operate the project rather than
   before updating production.
 - **Bounded GitHub automation:** only exact owner-authored daily-report and allowlisted feature PRs with all
   required checks may merge; duplicate drift issues are consolidated into one auditable thread.
+- **Verified bot commits:** report and feature-proposal commits are signed by GitHub through
+  `createCommitOnBranch`; no automation signing key or ruleset bypass is required.
 - **Public-dashboard guardrails:** package-detail warehouse queries are parameterized, responses use a short
   60-second cache, and an empty warehouse produces an explicit first-run state instead of a broken screen.
 - **Honest evaluation:** package-disjoint validation, leak gates, challenger retention, and production run
