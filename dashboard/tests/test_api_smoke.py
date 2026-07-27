@@ -122,10 +122,10 @@ def client(tmp_path, monkeypatch):
         wh.close()
 
 
-def test_healthz(client, monkeypatch):
+def test_health(client, monkeypatch):
     monkeypatch.setenv("GIT_SHA", "0123456789abcdef")
     monkeypatch.setenv("K_REVISION", "oss-radar-dashboard-00004-test")
-    r = client.get("/healthz")
+    r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {
         "status": "ok",
@@ -397,7 +397,7 @@ def test_empty_warehouse_degrades_gracefully(tmp_path, monkeypatch):
     main._response_cache.clear()
     try:
         c = TestClient(main.app)
-        assert c.get("/healthz").status_code == 200
+        assert c.get("/health").status_code == 200
         overview = c.get("/api/overview")
         assert overview.status_code == 200
         overview_body = overview.json()

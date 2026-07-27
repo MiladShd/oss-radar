@@ -96,8 +96,10 @@ def _cached(key: str, fn: Callable[[], Any], default: Any):
     return _safe(lambda: _response_cache.get(key, fn), default)
 
 
-@app.get("/healthz")
-def healthz():
+# Cloud Run reserves some paths ending in "z", so this route intentionally
+# avoids the common "/healthz" spelling.
+@app.get("/health")
+def health():
     return {
         "status": "ok",
         "git_sha": os.environ.get("GIT_SHA", "unknown"),
