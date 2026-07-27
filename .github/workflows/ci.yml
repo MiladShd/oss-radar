@@ -9,22 +9,76 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
       - name: Install
         run: |
           python -m pip install -U pip
-          pip install -r pipeline/requirements.txt ruff==0.8.4 pytest==8.3.4
+          pip install -r pipeline/requirements.txt -r requirements-dev.txt
           pip install --no-deps -e pipeline
-          # dashboard runtime + TestClient HTTP dep for the API smoke tests
-          pip install -r dashboard/requirements.txt httpx==0.28.1
+          pip install -r dashboard/requirements.txt
       - name: Lint
-        run: cd pipeline && ruff check oss_radar
+        run: |
+          actionlint
+          shellcheck scripts/*.sh
+          ruff check pipeline/oss_radar pipeline/tests dashboard scripts
+      - name: Verify built wheel contents and entry points
+        run: |
+          wheel_dir="$RUNNER_TEMP/oss-radar-wheel"
+          install_dir="$RUNNER_TEMP/oss-radar-wheel-install"
+          python -m pip wheel --no-deps ./pipeline -w "$wheel_dir"
+          python -m pip install --no-deps --target "$install_dir" "$wheel_dir"/oss_radar-*.whl
+          PYTHONPATH="$install_dir" python - <<'PY'
+          import json
+          from importlib import resources
+          from pathlib import Path
+
+          import oss_radar
+          from oss_radar import cli, validate_growth
+
+          install_dir = Path(__import__("os").environ["PYTHONPATH"]).resolve()
+          assert install_dir in Path(oss_radar.__file__).resolve().parents
+          expected = {
+              "config/active_features.json",
+              "ingest/fixtures/smoke.json",
+              "validate_growth.py",
+          }
+          root = resources.files("oss_radar")
+          missing = sorted(path for path in expected if not root.joinpath(path).is_file())
+          assert not missing, f"wheel is missing runtime files: {missing}"
+          assert json.loads(root.joinpath("config/active_features.json").read_text())["download"]
+          assert callable(validate_growth.main)
+          try:
+              cli.main(["--help"])
+          except SystemExit as exc:
+              assert exc.code == 0
+          else:
+              raise AssertionError("CLI help did not exit normally")
+          PY
+          smoke_json="$RUNNER_TEMP/oss-radar-wheel-smoke.json"
+          PYTHONPATH="$install_dir" python -m oss_radar.cli smoke \
+            --out "$RUNNER_TEMP/oss-radar-wheel-smoke" > "$smoke_json"
+          python -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data["mode"] == "fixture-offline"' "$smoke_json"
+      - name: Validate Terraform
+        run: |
+          terraform -chdir=infra/terraform fmt -check -diff
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+      - name: Audit runtime dependency graphs
+        run: |
+          pip-audit -r pipeline/requirements.txt
+          pip-audit -r dashboard/requirements.txt
       - name: Validation gate (leak guard — blocks merge if the gate regresses)
         run: pytest pipeline/tests/test_validation_gate.py -q
+      - name: Deterministic source-tree end-to-end smoke
+        run: python -m oss_radar.cli smoke --out "$RUNNER_TEMP/oss-radar-smoke"
       - name: Test pipeline
         run: pytest pipeline/tests -q
       - name: Test dashboard

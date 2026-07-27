@@ -33,6 +33,34 @@ def test_truncate_and_count(tmp_path):
     assert wh.count("download_history") == 0
 
 
+def test_upsert_replaces_matching_key_and_keeps_history(tmp_path):
+    wh = DuckDBWarehouse(path=str(tmp_path / "t.duckdb"))
+    wh.init_schema()
+    wh.upsert_rows("download_history", [
+        {"name": "a", "date": date(2026, 1, 1), "downloads": 5},
+        {"name": "a", "date": date(2026, 1, 2), "downloads": 7},
+    ], ["name", "date"])
+    # A revised API value replaces that package-day; a new day appends.
+    assert wh.upsert_rows("download_history", [
+        {"name": "a", "date": date(2026, 1, 2), "downloads": 9},
+        {"name": "a", "date": date(2026, 1, 3), "downloads": 11},
+        {"name": "a", "date": date(2026, 1, 3), "downloads": 12},
+    ], ["name", "date"]) == 2
+    df = wh.query_df("SELECT date, downloads FROM download_history ORDER BY date")
+    assert list(df["downloads"]) == [5, 9, 12]
+
+
+def test_upsert_rejects_null_keys(tmp_path):
+    wh = DuckDBWarehouse(path=str(tmp_path / "t.duckdb"))
+    wh.init_schema()
+    try:
+        wh.upsert_rows("download_history", [{"name": "a", "downloads": 1}], ["name", "date"])
+    except ValueError as exc:
+        assert "cannot contain NULL" in str(exc)
+    else:
+        raise AssertionError("NULL natural keys must be rejected")
+
+
 def test_string_date_coercion(tmp_path):
     wh = DuckDBWarehouse(path=str(tmp_path / "t.duckdb"))
     wh.init_schema()

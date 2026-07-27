@@ -3,8 +3,10 @@
 *Target:* 70-day forward **log-growth** of package downloads.
 *Model:* LightGBM, 14 causal download-dynamics features.
 *Harness:* [`pipeline/scripts/validate_growth.py`](../pipeline/scripts/validate_growth.py) — every number here is
-reproducible with `python pipeline/scripts/validate_growth.py` and is saved to
-[`docs/validation_results.json`](validation_results.json).
+reproducible with `.venv/bin/python pipeline/scripts/validate_growth.py`. By default it writes
+`/tmp/validation_results.json` and `/tmp/validation_*.csv`; intentionally refresh the committed artifacts with
+`VALIDATION_OUT=docs/validation_results.json VALIDATION_ARTIFACT_DIR=docs .venv/bin/python
+pipeline/scripts/validate_growth.py`.
 
 This document exists to **stress-test, not flatter** a headline number. It was produced by a
 deterministic statistical harness *and* an adversarial LLM statistician panel (see §8), which
@@ -14,9 +16,10 @@ together found two separate leaks and a strawman baseline in the original analys
 
 ## 1. TL;DR
 
-- **"R² = 0.74" is not real.** It was inflated ~0.12 by a centered-moving-average **lookahead leak**
-  (a feature at date *t* averaged downloads from *t−14 … t+14*). With a causal trailing smoother,
-  same split: **R² = 0.582, Spearman = 0.790**.
+- **The retired "R² = 0.74" headline is not a reproducible current-harness result.** In the controlled
+  ablation, a centered-moving-average **lookahead leak** (a feature at date *t* averaged downloads from
+  *t−14 … t+14*) scores **R² = 0.702**; changing only to a causal trailing smoother lowers it by `0.119`
+  to **R² = 0.582, Spearman = 0.790**.
 - **A second, larger leak hid underneath it.** All 91 packages appeared in both train and test, so
   the model memorised each package's level. A **package-disjoint** split (no shared packages) gives
   the honest unseen-package number: **R² = 0.363, Spearman = 0.683**.
@@ -35,12 +38,14 @@ together found two separate leaks and a strawman baseline in the original analys
 
 | measurement (leak-free unless noted) | R² | Spearman | what it means |
 |---|--:|--:|---|
-| Leaky headline (centered MA) | 0.740 | 0.826 | **wrong** — lookahead leak |
+| Retired historical headline (different run) | 0.740 | 0.826 | **not reproduced by this harness** |
+| Reproduced centered-MA ablation | 0.702 | 0.780 | **wrong** — lookahead leak |
 | Same-package, causal smoother | 0.582 | 0.790 | still leaks package identity |
 | **Unseen-package (GroupKFold)** | **0.363** | **0.683** | **the honest cross-sectional skill** |
 | Fair calibrated-persistence baseline | 0.022 | 0.370 | what you beat |
 
-The story is "0.74 → 0.36," and the model still clearly beats the fair baseline on ranking.
+The reproducible story is "`0.702` centered → `0.582` causal → `0.363` package-disjoint"; the model still
+clearly beats the fair baseline on ranking. The retired `0.740` value is historical context, not the ablation input.
 
 ---
 
@@ -152,8 +157,8 @@ vanishes — independent confirmation that the signal is cross-sectional, not te
 The blocker is structural: PyPI/pepy endpoints expose only ~180 days of history, so origins can't
 span > 2× the 70-day horizon today. A credible temporal claim needs:
 1. **Origin span > 140 days** → multiple 70-day-embargoed, non-overlapping folds.
-2. Because history is API-capped at ~180 days, this requires **accumulating our own daily snapshots
-   over months** — roughly one new independent 70-day forecast per 70 days collected, so a 3–4-origin
+2. Because history is API-capped at ~180 days, this requires **accumulating our own daily
+   `download_history` over months** — roughly one new independent 70-day forecast per 70 days collected, so a 3–4-origin
    temporal evaluation is **~6–9 months out** from when daily snapshotting begins.
 3. Track per-origin **Spearman / precision@10** as horizons close — not pooled R² — and alarm if a
    calibrated baseline ever wins a closed cohort.
@@ -163,7 +168,7 @@ span > 2× the 70-day horizon today. A credible temporal claim needs:
 ## 8. How this report was produced
 
 Two layers: a deterministic harness ([`validate_growth.py`](../pipeline/scripts/validate_growth.py))
-and an **LLM statistician panel** (12 agents) that ran adversarially on top of it:
+and an **LLM statistician panel** (11 analysis roles) that ran adversarially on top of it:
 
 - **4 auditors** red-teamed the methodology — they found the **shared-package leak** and the
   **strawman persistence baseline** the first harness missed.

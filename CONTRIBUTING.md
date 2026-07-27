@@ -40,6 +40,26 @@ comments the resulting momentum/risk movers — a quick way to see the effect of
   (each `fetch(...)` returns a flat dict and never raises; it returns `{"_ok": False}` on failure).
 - **Dashboard** improvements in [`dashboard/app/static/index.html`](dashboard/app/static/index.html).
 
+## Watchlist taxonomy
+
+Each package has one stable `primary_category`; the legacy `category` field is emitted as an alias so existing
+features, predictions, and dashboard filters remain compatible. Cross-cutting classifications belong in
+`PACKAGE_CAPABILITIES`, not in narrower one-package categories. GitHub topics are ingested separately as raw
+upstream metadata and are not treated as curated capabilities.
+
+When changing the watchlist:
+
+- Add a new primary category only when it has a clear boundary and at least 10 packages from independent
+  repositories. Otherwise, add a capability tag or keep the existing primary category.
+- Add cross-cutting tags to `CAPABILITIES`, then assign them in `PACKAGE_CAPABILITIES`.
+- Add `REPO_OVERRIDES` only when automatic repository discovery is ambiguous. Multiple PyPI packages may
+  intentionally share one monorepo; limited demos defer those duplicates to improve repository coverage.
+- Run `pytest pipeline/tests/test_taxonomy.py pipeline/tests/test_scoring_and_config.py -q`.
+
+Categories and capabilities improve discovery, filtering, and sample balance. They do **not** improve the
+forecasting model by themselves: taxonomy must be deliberately added as a model feature and pass the same
+package-disjoint validation gate before it can affect predictions.
+
 ## Conventions
 
 - Connectors must degrade gracefully — a failed source returns partial data, never an exception.

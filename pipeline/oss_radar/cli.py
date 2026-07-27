@@ -20,7 +20,7 @@ structlog.configure(processors=[
     structlog.processors.add_log_level,
     structlog.processors.TimeStamper(fmt="iso"),
     structlog.dev.ConsoleRenderer(),
-])
+], logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
 
 log = structlog.get_logger(__name__)
 
@@ -36,17 +36,21 @@ def _run_validation(settings, out_dir: str, upload: bool, staleness_hours: float
     statistics + reproducibility dumps, upload them to GCS, and alarm if the local Wolfram
     educational report has gone stale. The numbers themselves stay fresh even if the local
     Mac (which holds the Wolfram Engine) is offline."""
-    import oss_radar
-
-    script = Path(oss_radar.__file__).resolve().parent.parent / "scripts" / "validate_growth.py"
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "VALIDATION_OUT": str(out / "validation_results.json"),
            "VALIDATION_ARTIFACT_DIR": str(out)}
-    log.info("validate.start", script=str(script), out=str(out))
-    subprocess.run([sys.executable, str(script)], env=env, check=True)
+    log.info("validate.start", module="oss_radar.validate_growth", out=str(out))
+    subprocess.run(
+        [sys.executable, "-m", "oss_radar.validate_growth"],
+        env=env,
+        check=True,
+    )
 
     present = [a for a in _VALIDATION_ARTIFACTS if (out / a).exists()]
+    missing = sorted(set(_VALIDATION_ARTIFACTS) - set(present))
+    if missing:
+        raise RuntimeError(f"validation harness did not produce required artifacts: {missing}")
     _check_wolfram_staleness(settings, out, staleness_hours)
     if upload:
         _upload_validation(settings, out, present)
@@ -54,18 +58,22 @@ def _run_validation(settings, out_dir: str, upload: bool, staleness_hours: float
 
 
 def _upload_validation(settings, out: Path, artifacts: list[str]) -> None:
-    try:
-        from google.cloud import storage
+    """Upload to the Terraform-owned artifact bucket and fail the command on any error.
 
-        client = storage.Client(project=settings.gcp_project)
-        bucket = client.bucket(settings.artifact_bucket)
-        if not bucket.exists():
-            bucket = client.create_bucket(bucket, location=settings.region)
+    ``--upload`` is an explicit durability request, so a warning-only failure would make
+    scheduled validation look successful while leaving stale cloud evidence.
+    """
+    from google.cloud import storage
+
+    client = storage.Client(project=settings.gcp_project)
+    bucket = client.bucket(settings.artifact_bucket)
+    try:
         for a in artifacts:
             bucket.blob(f"validation/{a}").upload_from_filename(str(out / a))
-        log.info("validate.uploaded", bucket=settings.artifact_bucket, n=len(artifacts))
     except Exception as exc:  # noqa: BLE001
-        log.warning("validate.upload_failed", error=str(exc))
+        log.error("validate.upload_failed", bucket=settings.artifact_bucket, error=str(exc))
+        raise
+    log.info("validate.uploaded", bucket=settings.artifact_bucket, n=len(artifacts))
 
 
 def _check_wolfram_staleness(settings, out: Path, hours: float) -> None:
@@ -110,6 +118,16 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--dry-run", action="store_true", help="Skip GitHub PR/issue side effects")
     p_run.add_argument("--limit", type=int, default=None, help="Limit watchlist size (debug)")
 
+    p_smoke = sub.add_parser(
+        "smoke",
+        help="Run the bundled 3-package fixture end to end with network access denied",
+    )
+    p_smoke.add_argument(
+        "--out",
+        default=".artifacts/smoke",
+        help="artifact directory (default: .artifacts/smoke)",
+    )
+
     sub.add_parser("init-warehouse", help="Create warehouse tables")
     sub.add_parser("info", help="Print resolved configuration")
 
@@ -134,6 +152,14 @@ def main(argv: list[str] | None = None) -> int:
     p_audit.add_argument("--json", action="store_true", help="emit JSON instead of a table")
 
     args = parser.parse_args(argv)
+
+    if args.command == "smoke":
+        from oss_radar.smoke import run_offline_smoke
+
+        result = run_offline_smoke(args.out)
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
     settings = get_settings()
 
     if args.command == "info":

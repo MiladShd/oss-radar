@@ -13,11 +13,15 @@ from __future__ import annotations
 import pandas as pd
 
 from oss_radar.features.engineering import _num, build_risk_frame
+from oss_radar.models.evaluation import risk_forward_label_version
 
 
 def _escalated(t0: pd.Series, tN: pd.Series) -> int:
+    def flag(value) -> bool:
+        return bool(value) if value is not None and not pd.isna(value) else False
+
     v0, vN = _num(t0.get("vuln_count")) or 0, _num(tN.get("vuln_count")) or 0
-    newly_archived = (tN.get("archived") is True) and (t0.get("archived") is not True)
+    newly_archived = flag(tN.get("archived")) and not flag(t0.get("archived"))
     newly_removed = isinstance(tN.get("status"), str) and bool(tN.get("status")) and not (
         isinstance(t0.get("status"), str) and bool(t0.get("status"))
     )
@@ -30,26 +34,50 @@ def _escalated(t0: pd.Series, tN: pd.Series) -> int:
 
 
 def build_forward_risk_labels(snapshot_history: pd.DataFrame, horizon_days: int = 14) -> pd.DataFrame:
-    """Realized-outcome risk training rows; empty if history doesn't yet span the horizon."""
+    """Build one realized-outcome row per eligible package/date anchor.
+
+    Each anchor is paired only with a snapshot on the exact fixed outcome date. This turns daily
+    snapshot accumulation into additional supervised examples while avoiding both the moving-label
+    bug caused by comparing first/latest and a variable-horizon bug when collection days are
+    missing.
+    """
     if snapshot_history.empty or "snapshot_date" not in snapshot_history:
         return pd.DataFrame()
     df = snapshot_history.copy()
     df["snapshot_date"] = pd.to_datetime(df["snapshot_date"], errors="coerce")
     df = df.dropna(subset=["snapshot_date"])
 
+    # A retried run can create more than one snapshot for a package/day.  Prefer the most recently
+    # ingested value, then collapse to the natural package-day key before creating labels.
+    order = ["name", "snapshot_date"]
+    if "ingested_at" in df:
+        df["ingested_at"] = pd.to_datetime(df["ingested_at"], errors="coerce")
+        order.append("ingested_at")
+    df = (df.sort_values(order)
+          .drop_duplicates(subset=["name", "snapshot_date"], keep="last"))
+
     anchors, labels = [], []
     for _name, g in df.groupby("name"):
-        g = g.sort_values("snapshot_date")
-        t0, tN = g.iloc[0], g.iloc[-1]
-        span = (tN["snapshot_date"] - t0["snapshot_date"]).days
-        if span < horizon_days:
-            continue
-        anchors.append(t0)
-        labels.append(_escalated(t0, tN))
+        g = g.sort_values("snapshot_date").reset_index(drop=True)
+        by_date = {value.normalize(): idx for idx, value in enumerate(g["snapshot_date"])}
+        for _anchor_idx, t0 in g.iterrows():
+            target_date = (t0["snapshot_date"] + pd.Timedelta(days=horizon_days)).normalize()
+            outcome_idx = by_date.get(target_date)
+            if outcome_idx is None:
+                continue
+            tN = g.iloc[outcome_idx]
+            anchors.append(t0)
+            labels.append(_escalated(t0, tN))
 
     if not anchors:
         return pd.DataFrame()
     frame = build_risk_frame(pd.DataFrame(anchors))
+    frame["feature_date"] = [row["snapshot_date"].date() for row in anchors]
+    frame["outcome_date"] = [
+        (row["snapshot_date"] + pd.Timedelta(days=horizon_days)).date() for row in anchors
+    ]
+    frame["label_horizon_days"] = horizon_days
+    frame["label_version"] = risk_forward_label_version(horizon_days)
     frame["at_risk_label"] = labels
     return frame
 

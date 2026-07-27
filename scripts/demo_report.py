@@ -14,6 +14,7 @@ Refresh before a launch post:
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from oss_radar.warehouse import get_warehouse
@@ -50,6 +51,18 @@ def _fmt(x, spec: str = ".3f") -> str:
 
 def _growth_pred(row) -> float:
     return row.get("growth_pred_70d", row.get("growth_pred_7d"))
+
+
+def _scoped_reasons(row, column: str, fallback_slice) -> str:
+    if column in row and row.get(column) is not None:
+        return _reasons(row.get(column))
+    value = row.get("top_reasons")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            value = []
+    return ", ".join(fallback_slice(value)) if isinstance(value, list) else ""
 
 
 def main() -> None:
@@ -113,9 +126,10 @@ def main() -> None:
         "|---|--:|--:|---|",
     ]
     for _, r in mom.iterrows():
+        growth_change = math.expm1(float(_growth_pred(r)))
         L.append(
-            f"| `{r['name']}` | {r['momentum_score']:.0f} | {_growth_pred(r):+.1%} "
-            f"| {_reasons(r['top_reasons'])} |"
+            f"| `{r['name']}` | {r['momentum_score']:.0f} | {growth_change:+.1%} "
+            f"| {_scoped_reasons(r, 'momentum_reasons', lambda value: value[:2])} |"
         )
 
     L += ["", "## ⚠️ Top rising dependency risk", "",
@@ -123,7 +137,7 @@ def main() -> None:
     for _, r in risk.iterrows():
         L.append(
             f"| `{r['name']}` | {r['risk_score']:.0f} | {r['risk_level']} "
-            f"| {_reasons(r['top_reasons'])} |"
+            f"| {_scoped_reasons(r, 'risk_reasons', lambda value: value[-2:])} |"
         )
 
     L += ["", "## 📈 Model metrics (held-out)", "",
@@ -133,8 +147,8 @@ def main() -> None:
           f"- **Risk** (LightGBM classifier): ROC-AUC {_fmt(rk.get('auc'))} "
           f"on {_fmt(rk.get('n_samples'), '.0f')} packages ({_fmt(rk.get('n_positive'), '.0f')} at-risk).",
           "",
-          "_Metrics are deliberately modest on this small watchlist and improve as daily snapshot "
-          "history accumulates — they are tracked openly rather than hidden._",
+          "_Metrics are deliberately tracked openly rather than hidden. More dated history enables "
+          "stronger evaluation; it does not guarantee that the scores improve._",
           "",
           "## 🛰️ Source coverage", "",
           f"Share of the {n_pkgs} packages successfully ingested per free public source:",

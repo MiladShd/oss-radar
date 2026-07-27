@@ -7,6 +7,7 @@ produce the daily report and open a GitHub PR for it.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import structlog
 from oss_radar.agents import github_ops
 from oss_radar.agents.context import AgentContext
 from oss_radar.agents.improver import run_improver
+from oss_radar.source_health import github_recovery_guidance
 
 log = structlog.get_logger(__name__)
 
@@ -25,6 +27,16 @@ REPORT_SYSTEM = (
     "and monitoring Python/AI dependencies. Be specific and quantitative; no hype, no preamble. "
     "Output only the Markdown report."
 )
+
+SOURCE_HEALTH_THRESHOLD = 0.7
+
+
+def _is_cloud(settings) -> bool:
+    return bool(
+        getattr(settings, "is_cloud", False)
+        or getattr(settings, "backend", "") == "bigquery"
+        or getattr(settings, "env", "") == "cloud"
+    )
 
 
 # --- Data Engineer: ingestion freshness / source health ---
@@ -44,26 +56,43 @@ def _data_engineer(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
         rates = {s: round(sum(v) / len(v), 3) for s, v in per_source.items() if v}
 
     down = [s for s, r in rates.items() if r == 0.0]
-    degraded = [s for s, r in rates.items() if 0 < r < 0.7]
+    degraded = [s for s, r in rates.items() if 0 < r < SOURCE_HEALTH_THRESHOLD]
     status = "error" if down else "warning" if degraded else "ok"
+    github_hint = github_recovery_guidance(is_cloud=_is_cloud(ctx.settings))
     summary = (
         f"Ingested {len(snapshots)} packages. Source success: "
         + ", ".join(f"{s} {int(r*100)}%" for s, r in sorted(rates.items()))
     ) or "No snapshots ingested."
+    if rates.get("github", 1.0) < SOURCE_HEALTH_THRESHOLD:
+        summary += f" GitHub source degraded. {github_hint}"
     ctx.record("DataEngineer", "check_ingestion_freshness", status, summary)
 
     if down and not ctx.dry_run and ctx.settings.github_token:
+        guidance = (
+            f"\n\n{github_hint}"
+            if "github" in down
+            else ""
+        )
         url = github_ops.open_issue(
             ctx.settings.github_token, ctx.settings.github_repo,
             title=f"[oss-radar] Data source down: {', '.join(down)}",
             body=("The daily pipeline observed a 0% success rate for: "
                   f"{', '.join(down)}.\n\nSource success rates this run:\n"
-                  + "\n".join(f"- `{s}`: {int(r*100)}%" for s, r in sorted(rates.items()))),
+                  + "\n".join(f"- `{s}`: {int(r*100)}%" for s, r in sorted(rates.items()))
+                  + guidance),
             labels=["oss-radar", "data-incident"],
         )
         if url:
             ctx.record("DataEngineer", "open_issue", "ok", f"Opened incident for {down}", url)
-    return {"source_ok_rates": rates}
+    return {
+        "source_ok_rates": rates,
+        "degraded_sources": sorted(down + degraded),
+        "github_token_hint": (
+            github_hint
+            if rates.get("github", 1.0) < SOURCE_HEALTH_THRESHOLD
+            else ""
+        ),
+    }
 
 
 # --- Healer: report on self-healing actions taken during ingest ---
@@ -106,9 +135,14 @@ def _data_scientist(ctx: AgentContext, model_metrics: dict) -> None:
         note = m.get("promotion_note") or ("promoted to champion" if m.get("is_champion") else "kept as challenger")
         extra = f" · labels: {m['label_mode']}" if name == "risk" and m.get("label_mode") else ""
         n_train = m.get("n_train") or m.get("n_samples")
+        serving_metric = m.get(f"serving_{primary}")
+        serving_value = (f", served {primary}={serving_metric:.3f}"
+                         if isinstance(serving_metric, (int, float)) and serving_metric == serving_metric
+                         else "")
         ctx.record(
             "DataScientist", f"retrain_{name}_model", "ok",
-            f"{name.title()} model retrained ({val_str}, n_train={n_train}); {note}{extra}.",
+            f"{name.title()} candidate retrained ({val_str}, n_train={n_train}); {note}. "
+            f"Serving {m.get('serving', 'unknown')}{serving_value}{extra}.",
         )
 
 
@@ -154,42 +188,101 @@ def _movers(preds: pd.DataFrame, by: str, n: int = 6, asc: bool = False) -> pd.D
     return preds.sort_values(by, ascending=asc).head(n)
 
 
+def _metric_text(value) -> str:
+    return f"{value:.3f}" if isinstance(value, (int, float)) and value == value else "n/a"
+
+
+def _row_reasons(row: pd.Series, kind: str) -> list[str]:
+    key = "momentum_reasons" if kind == "momentum" else "risk_reasons"
+    value = row.get(key)
+    if isinstance(value, list):
+        return value
+    legacy = row.get("top_reasons")
+    if not isinstance(legacy, list):
+        return []
+    return legacy[:2] if kind == "momentum" else legacy[-2:]
+
+
+def _source_health_markdown(engineering: dict | None) -> str:
+    rates = (engineering or {}).get("source_ok_rates") or {}
+    if not rates:
+        return ""
+    github_hint = (engineering or {}).get("github_token_hint") or ""
+    lines = [
+        "## Source health",
+        "",
+        "| Source | Success | Status |",
+        "|---|---:|---|",
+    ]
+    for source, rate in sorted(rates.items()):
+        if rate == 0:
+            status = "down"
+        elif rate < SOURCE_HEALTH_THRESHOLD:
+            status = "degraded"
+        else:
+            status = "healthy"
+        if source == "github" and rate < SOURCE_HEALTH_THRESHOLD and github_hint:
+            status += f" — {github_hint}"
+        lines.append(f"| `{source}` | {rate:.0%} | {status} |")
+    return "\n".join(lines)
+
+
 def _template_report(date_str: str, preds: pd.DataFrame, model_metrics: dict,
-                     quality: dict) -> str:
+                     quality: dict, engineering: dict | None = None) -> str:
     mom = _movers(preds, "momentum_score")
     risk = _movers(preds, "risk_score")
     lines = [f"# OSS Radar — Daily Brief {date_str}", ""]
     gm = model_metrics.get("growth", {})
     rm = model_metrics.get("risk", {})
     lines.append(
-        f"_Tracked {len(preds)} packages · growth model spearman "
-        f"{gm.get('spearman', float('nan')):.3f} · risk model auc {rm.get('auc', float('nan')):.3f} · "
+        f"_Tracked {len(preds)} packages · served growth spearman "
+        f"{_metric_text(gm.get('serving_spearman'))} · served risk auc "
+        f"{_metric_text(rm.get('serving_auc'))} · "
         f"download coverage {quality.get('coverage', 0)*100:.0f}%_"
     )
     lines += ["", "## 🚀 Momentum movers", "", "| Package | Momentum | Pred 70d growth | Why |",
               "|---|---|---|---|"]
     for _, r in mom.iterrows():
-        reasons = ", ".join(r.get("top_reasons") or [])
-        lines.append(f"| `{r['name']}` | {r['momentum_score']:.0f} | {r['growth_pred_70d']:+.1%} | {reasons} |")
+        reasons = ", ".join(_row_reasons(r, "momentum"))
+        growth_change = math.expm1(float(r["growth_pred_70d"]))
+        lines.append(
+            f"| `{r['name']}` | {r['momentum_score']:.0f} | "
+            f"{growth_change:+.1%} | {reasons} |"
+        )
     lines += ["", "## ⚠️ Rising dependency risk", "", "| Package | Risk | Level | Why |", "|---|---|---|---|"]
     for _, r in risk.iterrows():
-        reasons = ", ".join(r.get("top_reasons") or [])
+        reasons = ", ".join(_row_reasons(r, "risk"))
         lines.append(f"| `{r['name']}` | {r['risk_score']:.0f} | {r['risk_level']} | {reasons} |")
+    source_health = _source_health_markdown(engineering)
+    if source_health:
+        lines += ["", source_health]
     lines += ["", "_Generated by the OSS Radar agent crew._"]
     return "\n".join(lines)
 
 
 def _risk_analyst(ctx: AgentContext, date_str: str, preds: pd.DataFrame,
-                  model_metrics: dict, quality: dict) -> str:
-    template = _template_report(date_str, preds, model_metrics, quality)
+                  model_metrics: dict, quality: dict, engineering: dict | None = None) -> str:
+    template = _template_report(date_str, preds, model_metrics, quality, engineering)
     report = template
     if ctx.llm.available:
-        mom = _movers(preds, "momentum_score")[["name", "momentum_score", "growth_pred_70d", "top_reasons"]]
-        risk = _movers(preds, "risk_score")[["name", "risk_score", "risk_level", "top_reasons"]]
+        mom_columns = [
+            "name", "momentum_score", "growth_pred_70d",
+            "momentum_reasons", "top_reasons",
+        ]
+        risk_columns = [
+            "name", "risk_score", "risk_level", "risk_composite_score",
+            "risk_classifier_probability", "risk_reasons", "top_reasons",
+        ]
+        mom = _movers(preds, "momentum_score")[
+            [column for column in mom_columns if column in preds]
+        ]
+        risk = _movers(preds, "risk_score")[
+            [column for column in risk_columns if column in preds]
+        ]
         prompt = (
             f"Date: {date_str}. Tracked {len(preds)} packages.\n"
-            f"Growth model spearman={model_metrics.get('growth', {}).get('spearman')}, "
-            f"risk model auc={model_metrics.get('risk', {}).get('auc')}.\n\n"
+            f"Served growth model spearman={model_metrics.get('growth', {}).get('serving_spearman')}, "
+            f"served risk model auc={model_metrics.get('risk', {}).get('serving_auc')}.\n\n"
             f"Top momentum movers (momentum_score 0-100, growth_pred_70d is forecast 70-day download momentum):\n"
             f"{mom.to_string(index=False)}\n\n"
             f"Top dependency-risk risers (risk_score 0-100):\n{risk.to_string(index=False)}\n\n"
@@ -200,6 +293,10 @@ def _risk_analyst(ctx: AgentContext, date_str: str, preds: pd.DataFrame,
         llm_out = ctx.llm.generate(REPORT_SYSTEM, prompt)
         if llm_out:
             report = f"# OSS Radar — Daily Brief {date_str}\n\n{llm_out}\n"
+            source_health = _source_health_markdown(engineering)
+            if source_health:
+                report += f"\n{source_health}\n"
+            report += "\n_Generated by the OSS Radar agent crew._"
     src = "claude" if (ctx.llm.available and report is not template) else "template"
     ctx.record("RiskAnalyst", "write_daily_report", "ok",
                f"Authored daily brief ({src}); {len(preds)} packages summarized.")
@@ -242,7 +339,14 @@ def run_crew(run_id: str, settings, llm, snapshots: pd.DataFrame, predictions: p
     _data_scientist(ctx, model_metrics)
     _model_monitor(ctx, drift)
     run_improver(ctx, train_df, active_download or [])
-    report_md = _risk_analyst(ctx, date_str, predictions, model_metrics, quality)
+    report_md = _risk_analyst(
+        ctx,
+        date_str,
+        predictions,
+        model_metrics,
+        quality,
+        engineering,
+    )
     pr_url = _mlops(ctx, date_str, report_md)
 
     return {

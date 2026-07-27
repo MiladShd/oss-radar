@@ -37,7 +37,9 @@ def _first(*vals):
 
 
 def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dict:
-    name, category = pkg["name"], pkg["category"]
+    name = pkg["name"]
+    primary_category = pkg.get("primary_category") or pkg.get("category", "")
+    category = primary_category
     now = datetime.now(UTC)
 
     eco_pkg = ecosystems.fetch_package(http, name)
@@ -59,17 +61,24 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "pypi_downloads": dl.get("_ok", False),
         "pypi_metadata": md.get("_ok", False),
         "ecosystems_pkg": eco_pkg.get("_ok", False),
-        "ecosystems_repo": eco_repo.get("_ok", False),
         "depsdev": deps.get("_ok", False),
         "osv": osv_d.get("_ok", False),
-        "github": gh_d.get("_ok", False),
     }
+    if owner:
+        # Repository providers are not attempted when no repository can be resolved.
+        # Omitting them keeps source-health rates about availability, not watchlist coverage.
+        source_status.update({
+            "ecosystems_repo": eco_repo.get("_ok", False),
+            "github": gh_d.get("_ok", False),
+        })
 
     snapshot = {
         "run_id": run_id,
         "snapshot_date": now.date(),
         "name": name,
         "category": category,
+        "primary_category": primary_category,
+        "capabilities": pkg.get("capabilities", []),
         "repo": f"{owner}/{repo}" if owner else None,
         # downloads
         "downloads_1d": dl.get("downloads_1d"),
@@ -90,6 +99,8 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "issues_opened_7d": gh_d.get("issues_opened_7d"),
         "bus_factor": eco_repo.get("bus_factor"),
         "archived": _first(eco_repo.get("archived"), gh_d.get("archived")),
+        "github_topics": gh_d.get("github_topics", []),
+        "primary_language": gh_d.get("primary_language"),
         # ecosystem
         "dependent_packages_count": eco_pkg.get("dependent_packages_count"),
         "dependent_repos_count": eco_pkg.get("dependent_repos_count"),
@@ -111,11 +122,38 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "vuln_new_14d": osv_d.get("vuln_new_14d"),
         "vuln_new_28d": osv_d.get("vuln_new_28d"),
         "max_severity": osv_d.get("max_severity"),
+        "max_severity_new_28d": osv_d.get("max_severity_new_28d"),
         # provenance
         "source_status": source_status,
         "ingested_at": now,
     }
     return {"snapshot": snapshot, "history": dl.get("history", [])}
+
+
+def _failed_snapshot(pkg: dict, run_id: str) -> dict:
+    """Keep a failed watchlist member visible so the healer can retry/carry it forward."""
+    now = datetime.now(UTC)
+    primary_category = pkg.get("primary_category") or pkg.get("category", "")
+    return {
+        "run_id": run_id,
+        "snapshot_date": now.date(),
+        "name": pkg["name"],
+        "category": primary_category,
+        "primary_category": primary_category,
+        "capabilities": pkg.get("capabilities", []),
+        "repo": pkg.get("repo_override"),
+        "downloads_7d": None,
+        "source_status": {
+            "pypi_downloads": False,
+            "pypi_metadata": False,
+            "ecosystems_pkg": False,
+            "ecosystems_repo": False,
+            "depsdev": False,
+            "osv": False,
+            "github": False,
+        },
+        "ingested_at": now,
+    }
 
 
 def collect(run_id: str, settings: Settings | None = None, max_workers: int = 4) -> dict:
@@ -140,6 +178,7 @@ def collect(run_id: str, settings: Settings | None = None, max_workers: int = 4)
                     ok += 1
             except Exception as exc:  # noqa: BLE001
                 log.warning("collect.package_failed", package=pkg["name"], error=str(exc))
+                snapshots.append(_failed_snapshot(pkg, run_id))
 
     log.info("collect.done", packages=len(snapshots), with_downloads=ok, history_rows=len(history))
     return {"snapshots": snapshots, "history": history}

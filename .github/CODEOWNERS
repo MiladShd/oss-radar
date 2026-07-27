@@ -1,0 +1,10 @@
+# Operational and supply-chain surfaces
+/.github/workflows/ @MiladShd
+/infra/ @MiladShd
+/scripts/deploy.sh @MiladShd
+/scripts/configure_github_rules.sh @MiladShd
+/pipeline/oss_radar/models/ @MiladShd
+/pipeline/oss_radar/registry/ @MiladShd
+
+# Default owner
+* @MiladShd

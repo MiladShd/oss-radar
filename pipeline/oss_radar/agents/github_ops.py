@@ -120,24 +120,28 @@ def open_daily_pr(token: str, repo_full: str, branch: str, report_path: str,
 
 def open_file_pr(token: str, repo_full: str, branch: str, path: str, content: str,
                  title: str, body: str, labels: list[str] | None = None) -> str | None:
-    """Open (or reuse) a PR that creates/updates a single file on a branch.
+    """Open or refresh a PR that creates/updates a single file on a bot branch.
 
-    Used by the self-improvement agent to propose enabling a feature. Idempotent on the
-    branch name, so the same proposal never opens duplicate PRs.
+    Used by the self-improvement agent to propose enabling a feature. The branch is reset
+    to the current default-branch tip before writing the proposal, so a reused PR never
+    accumulates stale commits or keeps testing against an obsolete base. Idempotence is
+    still keyed by branch name, so the same proposal never opens duplicate PRs.
     """
     repo = _repo(token, repo_full)
     if not repo:
         return None
     try:
         base = repo.default_branch
-        # reuse an existing open PR for this proposal if present
         existing = list(repo.get_pulls(state="open", head=f"{repo.owner.login}:{branch}"))
-        if existing:
-            return existing[0].html_url
-
+        existing_pr = existing[0] if existing else None
         base_sha = repo.get_branch(base).commit.sha
+
+        # These branches are fully bot-owned. Repointing an existing branch to the latest
+        # base keeps the eventual PR to exactly one generated-file change and re-runs CI
+        # against current code instead of an old snapshot of main.
         try:
-            repo.get_branch(branch)
+            ref = repo.get_git_ref(f"heads/{branch}")
+            ref.edit(sha=base_sha, force=True)
         except Exception:
             repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
 
@@ -146,6 +150,17 @@ def open_file_pr(token: str, repo_full: str, branch: str, path: str, content: st
             repo.update_file(path, f"feat: {title}", content, cur.sha, branch=branch)
         except Exception:
             repo.create_file(path, f"feat: {title}", content, branch=branch)
+
+        if existing_pr:
+            pr = existing_pr
+            # Re-open defensively in case GitHub briefly closed the PR while its bot
+            # branch pointed at the base commit during the refresh.
+            pr.edit(title=title, body=body, base=base, state="open")
+            try:
+                pr.add_to_labels(*(labels or ["oss-radar", "automated"]))
+            except Exception:  # noqa: BLE001
+                pass
+            return pr.html_url
 
         pr = repo.create_pull(title=title, body=body, head=branch, base=base)
         try:

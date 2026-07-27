@@ -9,15 +9,15 @@ oss-radar/
 │   ├── ingest/          # 6 source connectors + HTTP client + collector
 │   ├── warehouse/       # backend-agnostic schema + DuckDB & BigQuery backends
 │   ├── features/        # growth (time-series) + risk (cross-sectional) feature builders
-│   ├── models/          # LightGBM growth + risk, SHAP scoring
-│   ├── registry/        # champion/challenger promotion, GCS artifacts, MLflow
-│   ├── agents/          # Claude wrapper + the 5-agent crew + GitHub ops
+│   ├── models/          # LightGBM growth + calibrated risk, SHAP/scoped scoring
+│   ├── registry/        # cohort-aware promotion, durable GCS artifacts, local MLflow trace
+│   ├── agents/          # optional Claude wrapper + 7-agent operations crew + GitHub ops
 │   ├── orchestrator/    # the end-to-end daily pipeline
-│   └── cli.py           # `oss-radar run | init-warehouse | info`
+│   └── cli.py           # `oss-radar run | smoke | init-warehouse | info`
 ├── dashboard/app/       # FastAPI backend + single-file SPA
 ├── infra/               # Terraform + Cloud Build config
-├── scripts/             # deploy.sh, pr_comment.py
-└── .github/workflows/   # CI + PR-preview bot
+├── scripts/             # deploy, report preview, validation, and auto-triage helpers
+└── .github/workflows/   # CI, CodeQL, PR preview, auto-triage, and keyless deployment
 ```
 
 ## Design principles
@@ -38,15 +38,41 @@ from OSV. Each source was validated against real packages before a line of conne
 JSON columns are stored as serialized strings for portability. Queries stick to a portable SQL subset; date math
 happens in pandas.
 
+**Risk is learned and policy-bounded.** The risk classifier uses package-disjoint grouped OOF predictions for
+Platt calibration, then evaluates calibrated probabilities on a stable reserved-package holdout. The 60/40
+composite/classifier blend cannot cross below explicit archived/removed or recent high/critical vulnerability
+safety floors.
+
+## Deliberate stack tradeoffs
+
+OSS Radar currently tracks 91 packages through one daily collection, training, scoring, and reporting flow. Its
+roughly 180-day source windows fit comfortably in one pandas process, while DuckDB and BigQuery provide the local
+and managed warehouse paths. At this scale, adding distributed compute or a separate orchestration layer would add
+more deployment, lineage, and failure modes than useful capacity.
+
+- **No Spark:** the working set fits in memory and the expensive work is upstream API latency plus small-model
+  training, not a distributed scan or shuffle. Revisit Spark if package/history coverage grows by orders of
+  magnitude, daily transforms no longer fit a single worker, or distributed feature computation becomes the
+  measured bottleneck.
+- **No Airflow:** Cloud Scheduler invokes one Cloud Run Job with one observable pipeline lifecycle. Revisit a DAG
+  orchestrator when independently scheduled pipelines need dependency-aware backfills, cross-job SLAs, or
+  multi-team ownership.
+- **No dbt:** feature and label construction is Python/model code shared by DuckDB and BigQuery, rather than a large
+  SQL transformation graph. Revisit dbt when warehouse-native models become the dominant transformation layer and
+  shared SQL lineage, tests, and ownership contracts justify it.
+
+These are scale and complexity decisions, not résumé-keyword omissions. New infrastructure should answer a measured
+operational constraint.
+
 ## Warehouse tables
 
 | Table | Purpose |
 |---|---|
 | `snapshots` | point-in-time signals, one row per package per run (builds star/issue deltas over time) |
-| `download_history` | 180-day daily download series (rebuilt each run; powers training labels + sparklines) |
+| `download_history` | expanding daily download series, upserted by package/date from each API window (powers training labels + sparklines) |
 | `features` | engineered package-day rows (scoring rows + labels) |
 | `predictions` | momentum & risk scores + reasons, per run |
-| `model_runs` | one row per metric per trained model — the model-improvement history |
+| `model_runs` | one row per metric per candidate/monitor — evaluation and selection history |
 | `agent_activity` | what each agent did, per run — the dashboard timeline |
 | `pipeline_runs` | per-run status, stage durations, counts, git sha |
 
@@ -56,16 +82,31 @@ happens in pandas.
 Cloud Scheduler (daily cron)
         │ POST jobs:run  (OAuth, scheduler SA → run.invoker)
         ▼
-Cloud Run Job  "oss-radar-pipeline"   ── reads ──> 6 public APIs
+Cloud Run Job  "oss-radar-pipeline"   ── reads ──> 6 public providers / 7 health checks
    (2 vCPU / 4Gi, ML image)           ── writes ─> BigQuery + GCS (models)
                                        ── opens ──> GitHub PR / issue
         ▲ env from Secret Manager (GitHub token, Anthropic key)
 
 Cloud Run Service "oss-radar-dashboard"  (public, scale-to-zero, slim image)
         └── reads BigQuery ──> FastAPI JSON API ──> single-file SPA
+
+Cloud Run Job "oss-radar-pipeline-smoke"  (release-only, DuckDB /tmp)
+        └── no-role service account · no secrets · dry-run sample
 ```
 
-All durable infrastructure (BigQuery dataset, GCS bucket, service accounts + least-privilege IAM, both Cloud Run
-resources, the scheduler, and IAM bindings) is declared in [`infra/terraform`](../infra/terraform). Images are built
-for `linux/amd64` by Cloud Build; secrets are created out-of-band by `deploy.sh` so no secret material is ever in
-Terraform state.
+Infrastructure shape (BigQuery dataset, GCS buckets, service accounts + least-privilege IAM, Cloud Run
+resources, schedulers, and IAM bindings) is declared in [`infra/terraform`](../infra/terraform). Durable run/model
+decisions live in BigQuery and promoted artifacts in GCS; Cloud MLflow uses local `file:` storage and is only a
+best-effort ephemeral trace. Terraform uses a versioned, public-access-blocked GCS backend and manages the
+immutable Artifact Registry repository. Pipeline and dashboard images are built independently for `linux/amd64`
+by a dedicated Cloud Build service account, resolved to digests, and deployed by digest. Secret versions are
+published out-of-band by `deploy.sh` so no secret material enters Terraform state: Terraform owns only the
+protected Secret Manager containers/IAM, never versions or values. Both artifact and build-source buckets enforce
+public-access prevention, `force_destroy = false`, and `prevent_destroy`.
+
+All third-party GitHub Actions are pinned to exact commits. Workload Identity Federation is restricted to the
+immutable repository and owner identities, `main`, and the exact `deploy.yml` `workflow_ref`. The bootstrap refuses
+Terraform plans containing delete/replace actions. CD stages the dashboard at zero traffic and executes the pipeline
+image in the isolated no-role smoke job before production update; failures restore the captured pipeline image and
+dashboard revision. Terraform protects durable/control-plane resources from destroy and lifecycle-ignores CD-owned
+release fields so a stale infrastructure apply cannot roll a release back.

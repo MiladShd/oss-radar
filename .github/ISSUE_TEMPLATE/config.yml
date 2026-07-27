@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/MiladShd/oss-radar/security/advisories/new
+    about: Report vulnerabilities and exposed credentials privately.
+  - name: Live dashboard
+    url: https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app
+    about: Check the current public system and data-health state.

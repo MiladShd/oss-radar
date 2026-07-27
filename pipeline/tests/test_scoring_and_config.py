@@ -3,8 +3,14 @@
 import pandas as pd
 
 from oss_radar.config.packages import CATEGORIES, get_watchlist
+from oss_radar.features.engineering import _at_risk_label
 from oss_radar.ingest.pypi_metadata import _discover_repo, parse_owner_repo
-from oss_radar.models.scoring import momentum_from_pred, risk_composite
+from oss_radar.models.scoring import (
+    build_predictions,
+    momentum_from_pred,
+    persistence_growth_predictions,
+    risk_composite,
+)
 
 
 def test_momentum_monotonic_and_bounded():
@@ -30,6 +36,102 @@ def test_risk_composite_flags_critical_vuln():
     risky = risk_composite(pd.Series({"max_severity": "CRITICAL", "vuln_new_28d": 3, "bus_factor": 0.1,
                                       "days_since_last_release": 600, "scorecard_overall": 2}))[0]
     assert risky > safe
+
+
+def test_categorical_risk_hazards_have_high_safety_floors():
+    archived, archived_reasons = risk_composite(pd.Series({
+        "archived": True,
+        "status": None,
+        "max_severity": None,
+        "vuln_new_28d": 0,
+    }))
+    critical, critical_reasons = risk_composite(pd.Series({
+        "archived": False,
+        "status": None,
+        "max_severity": "CRITICAL",
+        "max_severity_new_28d": "CRITICAL",
+        "vuln_new_28d": 1,
+    }))
+
+    assert archived >= 85
+    assert critical >= 75
+    assert archived_reasons[0] == "archived / removed"
+    assert critical_reasons[0] == "recent critical vulnerability signal"
+
+
+def test_lifetime_severity_without_a_recent_vulnerability_does_not_trigger_floor():
+    score, reasons = risk_composite(pd.Series({
+        "archived": False,
+        "status": None,
+        "max_severity": "CRITICAL",
+        "max_severity_new_28d": None,
+        "vuln_new_28d": 0,
+        "bus_factor": 0.9,
+        "days_since_last_release": 5,
+        "scorecard_overall": 9,
+    }))
+
+    assert score < 66
+    assert "recent critical vulnerability signal" not in reasons
+
+
+def test_risk_label_requires_recent_severity_not_lifetime_severity():
+    old_critical = pd.Series({
+        "vuln_new_28d": 1,
+        "max_severity": "CRITICAL",
+        "max_severity_new_28d": None,
+        "archived": False,
+        "status": None,
+        "days_since_last_release": 10,
+        "bus_factor": 0.5,
+        "dependent_repos_count": 50,
+    })
+    recent_high = old_critical.copy()
+    recent_high["max_severity_new_28d"] = "HIGH"
+
+    assert _at_risk_label(old_critical) == 0
+    assert _at_risk_label(recent_high) == 1
+
+
+def test_classifier_cannot_dilute_a_critical_vulnerability_below_high():
+    class ZeroRiskModel:
+        @staticmethod
+        def predict_proba(frame):
+            return [0.0] * len(frame)
+
+    predictions = build_predictions(
+        "run",
+        pd.DataFrame({"name": ["critical-package"], "mom_56v56": [1.0]}),
+        pd.DataFrame([{
+            "name": "critical-package",
+            "category": "framework",
+            "max_severity": "CRITICAL",
+            "max_severity_new_28d": "CRITICAL",
+            "vuln_new_28d": 1,
+            "archived": False,
+            "status": None,
+        }]),
+        pd.DataFrame({"name": ["critical-package"]}),
+        growth_model=None,
+        risk_model=ZeroRiskModel(),
+    )
+    row = predictions.iloc[0]
+
+    assert row["risk_composite_score"] >= 75
+    assert row["risk_score"] >= 75
+    assert row["risk_level"] == "high"
+    assert row["risk_reasons"][0] == "recent critical vulnerability signal"
+
+
+def test_growth_persistence_fallback_is_neutral_at_flat_momentum():
+    predictions, reasons = persistence_growth_predictions(pd.DataFrame({
+        "mom_56v56": [1.0, 2.0, 0.5],
+    }))
+
+    assert predictions[0] == 0.0
+    assert predictions[1] > 0
+    assert predictions[2] < 0
+    assert reasons[0][0][0] == "mom_56v56"
 
 
 def test_watchlist_integrity():

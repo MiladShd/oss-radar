@@ -1,0 +1,44 @@
+name: PR Preview Comment
+
+# A pull_request token is read-only for public forks. Relay only the text artifact from the
+# completed unprivileged preview through this trusted default-branch workflow; never check out
+# or execute contributor code here.
+on:
+  workflow_run:
+    workflows: ["PR Preview"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0].number != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download preview result from the triggering run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pr-preview-${{ github.event.workflow_run.pull_requests[0].number }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Post sanitized preview comment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('preview_comment.md', 'utf8');
+            const preview = raw.slice(0, 59000).replaceAll('@', '@\u200b');
+            const body = `<!-- oss-radar-preview -->\n## OSS Radar PR preview\n\n${preview}`;
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: Number(process.env.PR_NUMBER),
+              body,
+            });

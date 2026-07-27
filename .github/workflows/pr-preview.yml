@@ -7,16 +7,17 @@ name: PR Preview
 on:
   pull_request:
 
-permissions:
-  contents: read
-  pull-requests: write
-
 jobs:
   preview:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -25,30 +26,39 @@ jobs:
           python -m pip install -U pip
           pip install -r pipeline/requirements.txt
           pip install --no-deps -e pipeline
-      - name: Run pipeline (dry-run · 8 packages · DuckDB)
+      - name: Run pipeline (dry-run · 30 packages · DuckDB)
         env:
           OSS_RADAR_BACKEND: duckdb
           OSS_RADAR_DUCKDB_PATH: preview.duckdb
-          OSS_RADAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m oss_radar.cli run --dry-run --limit 8
-      - name: Validation gate (block a leak introduced on this branch)
+          OSS_RADAR_ANTHROPIC_API_KEY: DISABLED
+        run: python -m oss_radar.cli run --dry-run --limit 30
+      - name: Independently reproduce any feature lift
         env:
           OSS_RADAR_BACKEND: duckdb
           OSS_RADAR_DUCKDB_PATH: preview.duckdb
-        # --require-pass fails the PR check on a genuine gate failure; a skip on thin
-        # preview data (too few rows to verify) exits 0, so honest PRs are never blocked.
-        run: python -m oss_radar.cli gate --require-pass
+        run: |
+          git show "origin/${GITHUB_BASE_REF}:pipeline/oss_radar/config/active_features.json" \
+            > /tmp/oss-radar-base-features.json
+          python scripts/feature_pr_check.py \
+            --base /tmp/oss-radar-base-features.json \
+            --head pipeline/oss_radar/config/active_features.json
+      - name: Exercise validation gate (candidate holds are expected)
+        env:
+          OSS_RADAR_BACKEND: duckdb
+          OSS_RADAR_DUCKDB_PATH: preview.duckdb
+        # This reduced cohort is live public data, not a captured base/head benchmark. A failed
+        # candidate is therefore an expected safe outcome: the pipeline keeps the prior champion.
+        # Deterministic gate tests and the base/head feature check remain merge-blocking.
+        run: python -m oss_radar.cli gate
       - name: Build comment
         env:
           OSS_RADAR_BACKEND: duckdb
           OSS_RADAR_DUCKDB_PATH: preview.duckdb
         run: python scripts/pr_comment.py
-      - name: Post comment
-        uses: actions/github-script@v7
+      - name: Upload preview result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('preview_comment.md', 'utf8');
-            await github.rest.issues.createComment({
-              ...context.repo, issue_number: context.issue.number, body,
-            });
+          name: pr-preview-${{ github.event.pull_request.number }}
+          path: preview_comment.md
+          if-no-files-found: error
+          retention-days: 1

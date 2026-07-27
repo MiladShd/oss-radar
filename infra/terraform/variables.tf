@@ -23,6 +23,35 @@ variable "github_repo" {
   default = "MiladShd/oss-radar"
 }
 
+variable "github_repository_id" {
+  type        = string
+  default     = "1274922810"
+  description = "Immutable numeric GitHub repository id used to restrict deployment OIDC tokens"
+}
+
+variable "github_repository_owner_id" {
+  type        = string
+  default     = "14307102"
+  description = "Immutable numeric GitHub repository-owner id used to restrict deployment OIDC tokens"
+}
+
+variable "github_deploy_branch" {
+  type        = string
+  default     = "main"
+  description = "Only GitHub OIDC tokens for this branch may impersonate the deployment service account"
+}
+
+variable "git_sha" {
+  type        = string
+  default     = "unknown"
+  description = "Git commit represented by the deployed pipeline and dashboard images"
+
+  validation {
+    condition     = can(regex("^[a-z0-9_-]{1,63}$", var.git_sha))
+    error_message = "git_sha must be a lowercase Git SHA or a label-safe marker such as dirty-<sha>."
+  }
+}
+
 variable "github_secret" {
   type    = string
   default = "oss-radar-github-token"

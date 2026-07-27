@@ -1,70 +1,114 @@
-# OSS Radar — sample output
+# OSS Radar — historical pre-operationalization production baseline
 
-> A real, unedited run of the full pipeline (ingest → features → train → score → agents) on **40 packages** against free public data sources, written to a local DuckDB warehouse. Generated from run `20260621T012704Z` (2026-06-20). Refresh with `make demo && python scripts/demo_report.py`.
+> **Baseline, not current evaluation evidence.** This capture predates the cohort-aware promotion and serving
+> fixes now in the repository. In this older deployment, growth was compared with a best-ever value from a
+> different moving cohort; risk `0.620` came from the retired row-random evaluation with first/latest
+> variable-horizon labels; and the held risk candidate was still blended into predictions. The capture is retained
+> to make that operational gap auditable. Refresh it after the operationalization release is deployed before using
+> it as evidence of current model behavior.
 
-_Tracked 40 packages · growth model Spearman 0.097 · risk model AUC 0.576 · download coverage 100%_
+> Captured from the public production APIs for run `20260726T093245Z` on 2026-07-26. This is an
+> evidence snapshot of the real scheduled BigQuery/Cloud Run pipeline: 91 packages ingested, 91
+> predictions written, and the run completed successfully in about 9 minutes 18 seconds.
+
+_Tracked 91 packages · average momentum 54.7 · 16 rising · 3 high-risk · download coverage 100%_
 
 ## 🚀 Top momentum movers
 
-| Package | Momentum | Pred 70d growth | Why |
-|---|--:|--:|---|
-| `metagpt` | 60 | +14.2% | this week running above the monthly average, strong weekly download base, release staleness, maintainer key-person risk |
-| `e2b` | 60 | +13.9% | weekly downloads accelerating vs prior week, strong monthly download base, maintainer key-person risk, weak security posture |
-| `langflow` | 59 | +12.2% | weekly downloads accelerating vs prior week, small monthly download base, recent vulnerabilities, maintainer key-person risk |
-| `weaviate-client` | 59 | +12.2% | weekly downloads accelerating vs prior week, 28-day download trend falling, issue backlog pressure, maintainer key-person risk |
-| `trl` | 59 | +12.1% | strong monthly download base, volatile download pattern, maintainer key-person risk, weak security posture |
-| `haystack-ai` | 59 | +11.9% | weekly downloads accelerating vs prior week, small monthly download base |
-| `pyautogen` | 59 | +11.7% | weekly downloads accelerating vs prior week, small monthly download base, release staleness, issue backlog pressure |
-| `dspy-ai` | 58 | +10.9% | weekly downloads accelerating vs prior week, small monthly download base, issue backlog pressure, maintainer key-person risk |
+| Package | Category | Momentum | Predicted 70d momentum | Why |
+|---|---|--:|--:|---|
+| `browser-use` | agents | 94.4 | +156.8% | 8-week trend rising; prior-8-week growth; recent vulnerabilities; key-person risk |
+| `zenml` | MLOps | 83.6 | +72.1% | 8-week trend rising; steady downloads; recent vulnerabilities; weak security posture |
+| `ibis-framework` | data engineering | 82.7 | +68.4% | strong 12-week base; monthly growth; release staleness; key-person risk |
+| `anthropic` | LLM | 73.3 | +39.9% | strong weekly base; 12-week trend rising; key-person risk; weak security posture |
+| `langsmith` | agents | 72.4 | +38.0% | strong weekly base; weaker prior-8-week comparison; recent vulnerabilities; key-person risk |
+| `weaviate-client` | retrieval/vector DB | 72.2 | +37.3% | monthly growth; strong weekly base; key-person risk; weak security posture |
+| `litellm` | LLM | 70.7 | +34.2% | 12-week trend rising; recent vulnerabilities; key-person risk |
+| `huggingface-hub` | LLM | 70.3 | +33.2% | monthly growth; 12-week trend rising; key-person risk; weak security posture |
 
-## ⚠️ Top rising dependency risk
+`growth_pred_70d` is log-growth. The percentages above use
+`100 × expm1(growth_pred_70d)`; formatting the raw log value directly as a percent would understate the change.
 
-| Package | Risk | Level | Why |
-|---|--:|---|---|
-| `langflow` | 63 | medium | weekly downloads accelerating vs prior week, small monthly download base, recent vulnerabilities, maintainer key-person risk |
-| `metagpt` | 62 | medium | this week running above the monthly average, strong weekly download base, release staleness, maintainer key-person risk |
-| `pinecone-client` | 62 | medium | small monthly download base, small weekly download base, release staleness, maintainer key-person risk |
-| `vllm` | 61 | medium | this week running above the monthly average, strong monthly download base, recent vulnerabilities, weak security posture |
-| `litellm` | 59 | medium | volatile download pattern, weekly downloads slowing vs prior week, recent vulnerabilities, maintainer key-person risk |
-| `langchain` | 53 | medium | weekly downloads accelerating vs prior week, small monthly download base, recent vulnerabilities, weak security posture |
-| `langsmith` | 51 | medium | volatile download pattern, strong monthly download base, recent vulnerabilities, maintainer key-person risk |
-| `pyautogen` | 23 | low | weekly downloads accelerating vs prior week, small monthly download base, release staleness, issue backlog pressure |
+## ⚠️ Highest dependency risk
 
-## 📈 Model metrics (held-out)
+| Package | Category | Risk | Level | Why |
+|---|---|--:|---|---|
+| `metagpt` | agents | 73.7 | high | 8-week trend falling; weekly slowdown; recent vulnerabilities; release staleness |
+| `smolagents` | agents | 69.0 | high | 8-week and monthly downloads falling; recent vulnerabilities; issue pressure |
+| `hnswlib` | retrieval/vector DB | 68.5 | high | small weekly base; weekly slowdown; release staleness; weak security posture |
+| `litellm` | LLM | 65.8 | medium | recent vulnerabilities; key-person risk; small 12-week base |
+| `agno` | agents | 64.6 | medium | 8-week and monthly downloads falling; recent vulnerabilities; key-person risk |
+| `pyautogen` | agents | 64.3 | medium | 8-week and monthly downloads falling; release staleness; issue pressure |
+| `mlflow` | MLOps | 64.1 | medium | 8-week trend falling; recent vulnerabilities; weak security posture |
+| `tensorflow` | ML framework | 63.8 | medium | 8-week and monthly downloads falling; recent vulnerabilities; release staleness |
 
-- **Growth** (LightGBM regressor): Spearman 0.097, MAE 0.163, RMSE 0.282, R² -0.005 · trained on 1568 rows, tested on 392.
-- **Risk** (LightGBM classifier): ROC-AUC 0.576 on 40 packages (7 at-risk).
+The “Why” text combines growth SHAP phrases and transparent composite-risk drivers. It does not explain the
+classifier contribution that this historical build blended into `risk_score`.
 
-_Metrics are deliberately modest on this small watchlist and improve as daily snapshot history accumulates — they are tracked openly rather than hidden._
+## 📈 Model decision, not marketing
+
+The older run did **not** report continuous improvement, but its comparison fields must be read as historical:
+
+- **Growth challenger:** held-out Spearman `0.842`; package-disjoint Spearman `0.666` and R² `0.104`.
+  The generalization gate rejected it. The displayed `0.891` “champion” value came from another moving cohort, so
+  it is not a fair head-to-head comparison.
+- **Risk challenger:** legacy row-random AUC `0.620` on 91 packages with 41 labels built from the old
+  first/latest variable-horizon logic. Calling this package-disjoint or exact-14-day evaluation would be wrong.
+  The recorded `0.760` belonged to that retired lineage, and this held candidate was nevertheless blended into
+  the risk scores shown above.
+- **Drift:** low for this run—momentum PSI `0.030`, risk PSI `0.037`, label churn `2.7%`.
+- **Feature experiment:** none of the three candidates cleared the `+0.010` lift bar
+  (`recent_share +0.000`, `dow_volatility_7 -0.011`, `trend_slope_7 -0.034`).
+
+These numbers motivated the operationalization: the current code uses exact +14-day labels, package-disjoint OOF
+Platt calibration, a stable untouched risk holdout, a `0.55` new-lineage AUC floor, current-cohort incumbent
+re-scoring, versioned benchmark provenance, and serving that excludes held candidates. It also re-applies explicit
+archived/removed and recent high/critical vulnerability safety floors after classifier blending, so the historical
+risk table is not a preview of current scoring behavior. Elapsed calendar time alone is still not evidence of
+better forecasting.
 
 ## 🛰️ Source coverage
 
-Share of the 40 packages successfully ingested per free public source:
+Six public providers are surfaced as seven source-health checks because ecosyste.ms package and repository
+metadata are checked separately.
 
-| Source | Coverage |
+| Signal | Coverage |
 |---|--:|
-| pypistats (downloads) | 100% |
-| PyPI JSON (releases) | 100% |
-| ecosyste.ms (package) | 100% |
-| ecosyste.ms (repo) | 92% |
-| deps.dev (+ Scorecard) | 100% |
-| OSV.dev (vulnerabilities) | 100% |
-| GitHub REST (activity) | 100% |
+| pypistats downloads | 100% |
+| PyPI release metadata | 100% |
+| ecosyste.ms package metadata | 100% |
+| ecosyste.ms repository metadata | 93% |
+| deps.dev + OpenSSF Scorecard | 100% |
+| OSV vulnerabilities | 100% |
+| GitHub activity | 100% |
 
-## 🤖 What the agent crew did
+## 🤖 Operations activity
 
-| Agent | Action | Status | Summary |
-|---|---|---|---|
-| Healer | self_heal_ingest | ok | All sources healthy — no healing needed. |
-| DataEngineer | check_ingestion_freshness | ok | Ingested 40 packages. Source success: depsdev 100%, ecosystems_pkg 100%, ecosystems_repo 92%, github 100%, osv 100%, pypi_downloads 100%, pypi_metadata 100% |
-| DataQuality | validate_feature_table | ok | 100% download coverage, 0 duplicate(s). Null rates: stars 0%, dependent_repos_count 0%, scorecard_overall 62%, bus_factor 35% |
-| DataScientist | retrain_growth_model | ok | Growth model retrained (spearman=0.097, n_train=1568); first champion: spearman=0.097. |
-| DataScientist | retrain_risk_model | ok | Risk model retrained (auc=0.576, n_train=40); first champion: auc=0.576 · labels: heuristic. |
-| DataScientist | monitor_drift | ok | No prior run to compare — drift baseline established for next run. |
-| ImprovementScientist | feature_experiment | ok | Tested 4 candidate features against held-out Spearman: trend_slope_7 Δ+0.042, recent_share Δ-0.009, mom_28v28 Δ-0.011, dow_volatility_7 Δ-0.086. |
-| ImprovementScientist | open_pull_request | skipped | Would propose enabling 'trend_slope_7' (Δspearman +0.042); PR skipped (dry-run / no token). |
-| RiskAnalyst | write_daily_report | ok | Authored daily brief (template); 40 packages summarized. |
-| MLOps | publish_report | ok | Wrote reports/2026-06-21.md |
-| MLOps | open_pull_request | skipped | GitHub PR skipped (dry-run or no token). |
+| Component | Result |
+|---|---|
+| Healer | All core sources healthy; no retry or carry-forward required. |
+| Data quality | 100% download coverage, zero duplicates; Scorecard 40% null and bus-factor 23% null. |
+| Growth training | Challenger rejected by validation gate; prior registered champion retained. |
+| Risk training | Legacy variable-horizon candidate was held, although this old build still blended it into scoring. |
+| Drift monitor | Low band; no new investigation required. |
+| Feature experiment | No candidate cleared the proposal threshold. |
+| Risk analyst | Deterministic template brief generated for all 91 packages. |
+| MLOps | Daily report written and PR #76 opened. |
 
-_Generated by the OSS Radar agent crew. With an Anthropic key the RiskAnalyst writes a prose brief; in template mode (shown here) it renders this structured report._
+## Provenance note
+
+The deployed workload reported `git_sha: unknown` for this historical run; that was an operational gap, not hidden
+from the sample. The operationalization release adds full-SHA image tags, workload-label provenance,
+zero-traffic dashboard verification, and `/healthz` SHA checking. The full SHA is baked into each image and the
+Cloud Run resources carry matching labels. Future captures can therefore tie the data run and serving revision to
+an exact commit.
+
+Refresh a local reproducible sample with:
+
+```bash
+make demo
+.venv/bin/python scripts/demo_report.py
+```
+
+Or inspect the current production evidence through the public `/api/overview`, `/api/runs`, `/api/models`, and
+`/api/agents` endpoints linked from the live dashboard.

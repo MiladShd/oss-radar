@@ -10,7 +10,6 @@ Both actions are bounded and logged by the Healer agent.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 
 import structlog
@@ -22,7 +21,6 @@ from oss_radar.ingest.collector import collect_one
 from oss_radar.ingest.http import HttpClient
 
 log = structlog.get_logger(__name__)
-_SAFE = re.compile(r"[^A-Za-z0-9_.\-]")
 
 
 def identify_failures(snapshots: list[dict]) -> list[str]:
@@ -35,11 +33,12 @@ def _carry_forward(wh, run_id: str, names: list[str], snapshots: list[dict],
     healed = 0
     now = datetime.now(UTC)
     for name in names:
-        safe = _SAFE.sub("", name)[:80]
+        attempt = snapshots[idx[name]]
         try:
             prev = wh.query_df(
-                f"SELECT * FROM snapshots WHERE name = '{safe}' AND downloads_7d IS NOT NULL "
-                f"ORDER BY snapshot_date DESC LIMIT 1"
+                "SELECT * FROM snapshots WHERE name = ? AND downloads_7d IS NOT NULL "
+                "ORDER BY snapshot_date DESC LIMIT 1",
+                (name,),
             )
         except Exception:  # noqa: BLE001
             continue
@@ -48,7 +47,10 @@ def _carry_forward(wh, run_id: str, names: list[str], snapshots: list[dict],
         row = prev.iloc[0].to_dict()
         row["run_id"] = run_id
         row["snapshot_date"] = now.date()
-        row["ingested_at"] = now
+        # The signal values are carried forward, but provenance belongs to this failed
+        # attempt. Reusing the previous healthy status would make an outage look healthy.
+        row["source_status"] = attempt.get("source_status")
+        row["ingested_at"] = attempt.get("ingested_at") or now
         snapshots[idx[name]] = row
         healed += 1
     return healed
