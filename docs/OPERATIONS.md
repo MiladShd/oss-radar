@@ -135,7 +135,7 @@ dashboard_url="$(
     --project="$project" --region="$region" --format='value(status.url)'
 )"
 
-curl --fail --silent --show-error "$dashboard_url/healthz" | jq .
+curl --fail --silent --show-error "$dashboard_url/health" | jq .
 curl --fail --silent --show-error "$dashboard_url/api/system-health" | jq .
 
 gcloud run jobs describe oss-radar-pipeline \
@@ -147,9 +147,12 @@ gcloud run jobs describe oss-radar-pipeline-smoke \
   --format='yaml(spec.template.spec.template.spec.serviceAccount,spec.template.spec.template.spec.containers[0].image)'
 ```
 
-`/healthz` must return `status: ok` and the expected full Git SHA. `/api/system-health` must return successfully
+`/health` must return `status: ok` and the expected full Git SHA. `/api/system-health` must return successfully
 even for a first-run warehouse. The dashboard has an explicit first-run state, parameterized package-detail
 queries, a 60-second response cache, and a two-instance maximum.
+
+Keep the probe at `/health`: Cloud Run reserves some URL paths ending in `z`, so `/healthz` can be intercepted
+before the request reaches the container.
 
 Populate a new environment or smoke-test the pipeline job:
 
@@ -164,7 +167,7 @@ Then confirm the latest `/api/runs` record is successful and reports the deploye
 
 Treat the live URL as current portfolio evidence only when all of these are true:
 
-- `/healthz` returns HTTP 200 and the exact expected full Git SHA;
+- `/health` returns HTTP 200 and the exact expected full Git SHA;
 - `/api/system-health` is readable and does not report an error/unknown data state;
 - the latest pipeline run is successful, finished within **48 hours**, and reports the deployed SHA;
 - the overview has nonzero tracked packages and the latest run has nonzero predictions; and
@@ -191,7 +194,7 @@ def get(path):
             raise SystemExit(f"{path}: HTTP {response.status}")
         return json.load(response)
 
-health = get("/healthz")
+health = get("/health")
 system = get("/api/system-health")
 overview = get("/api/overview")
 runs = get("/api/runs")

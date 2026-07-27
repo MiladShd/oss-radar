@@ -273,7 +273,7 @@ Operational guardrails include:
 - a short response cache for expensive GETs;
 - no caching of failures or dependency-audit POSTs;
 - an explicit first-run state with the active warehouse and setup command;
-- `/healthz` full-SHA provenance;
+- `/health` full-SHA provenance;
 - `/api/system-health` data-state and source/model/run summaries;
 - JSON cleanup for timestamps, numpy scalars, NaN, and infinity.
 
@@ -328,7 +328,7 @@ The workflow:
 3. resolves the tags to `@sha256:` digests and deploys by digest;
 4. captures the current pipeline image/SHA, any legacy runtime SHA override, and dashboard revision;
 5. stages the dashboard candidate with zero production traffic;
-6. validates `/healthz`, full SHA, and a non-error `/api/system-health` contract;
+6. validates `/health`, full SHA, and a non-error `/api/system-health` contract;
 7. points a permanent isolated smoke job at the pipeline digest and executes an eight-package
    DuckDB dry run with a no-role service account, `/tmp` warehouse, no secrets, dry-run GitHub
    behavior, and the optional LLM disabled;

@@ -99,7 +99,7 @@ metadata are checked separately.
 
 The deployed workload reported `git_sha: unknown` for this historical run; that was an operational gap, not hidden
 from the sample. The operationalization release adds full-SHA image tags, workload-label provenance,
-zero-traffic dashboard verification, and `/healthz` SHA checking. The full SHA is baked into each image and the
+zero-traffic dashboard verification, and `/health` SHA checking. The full SHA is baked into each image and the
 Cloud Run resources carry matching labels. Future captures can therefore tie the data run and serving revision to
 an exact commit.
 

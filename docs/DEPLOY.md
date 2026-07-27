@@ -100,7 +100,7 @@ checks import/provenance inside the image, and publishes one immutable component
 tag to an `@sha256:` digest and deploys those digests. It captures the current production pipeline image/SHA,
 any legacy runtime SHA override, and dashboard revision before making changes. Updates explicitly remove runtime
 `GIT_SHA` so it cannot override image-baked provenance. The dashboard candidate receives zero production traffic
-until `/healthz` reports the exact full SHA, `/api/system-health` returns a valid non-error contract, and the SPA
+until `/health` reports the exact full SHA, `/api/system-health` returns a valid non-error contract, and the SPA
 shell contains its required markers and passes a JavaScript syntax check.
 
 Before production pipeline update, the workflow points the permanent `oss-radar-pipeline-smoke` job at the new
