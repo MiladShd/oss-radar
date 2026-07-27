@@ -7,47 +7,44 @@ copied as a boilerplate.
 ## Branch protection (GitHub ruleset: "main branch protection")
 
 The ruleset targets **`~DEFAULT_BRANCH` (`main`) only** — feature branches are unrestricted so the PR
-workflow actually works, while everything that lands on `main` is gated. Once configured with the helper below,
-the only bypass actor is the repository's GitHub Actions app, limited to **pull-request bypass mode**. That exception lets the
-allowlisted auto-triage workflow complete an already-green bot PR; it does not grant direct-push bypass.
+workflow actually works, while everything that lands on `main` is gated. There are no bypass actors. The
+allowlisted auto-triage workflow must keep its PR current with `main` and satisfy the same checks as a human PR.
 
 | Rule | Why |
 |---|---|
 | **Require a pull request** (0 required approvals) | Every change to `main` is a reviewable, CI-gated PR. Zero approvals because a solo maintainer can't approve their own PR — requiring ≥1 would deadlock merges. Add reviewers and raise this the moment a second maintainer joins. |
-| **Require status checks — `test`** | The CI job (ruff + pytest) must pass before merge. The quality gate, enforced. |
+| **Require status checks — `test`, `preview`, `analyze`** | Tests/lint, the live 30-package model gate, and CodeQL must all pass on a branch current with `main`. |
 | **Require linear history** | No merge commits on `main`; PRs land via **squash or rebase** only (`merge` method is disabled, which would otherwise contradict this rule). History stays bisectable. |
 | **Require signed commits** | Every commit on `main` has a verified signature (SSH signing). Provenance, not vibes. |
 | **Block force-pushes** (non-fast-forward) | `main` history is append-only — no silent rewrites. |
 | **Block deletion** | `main` can't be deleted. |
 
-### GitHub Actions pull-request bypass
+### App-bound required checks
 
-Daily model-improvement commits are created by automation and are not signed with the maintainer's SSH
-key. GitHub's squash merge creates the final commit on `main`, but a required-signatures rule can still
-prevent the app from completing the PR. Ruleset `17938598` should therefore grant GitHub Actions (integration
-ID `15368`) a narrowly scoped `pull_request` bypass. Required signed commits, required `test` status,
-linear history, deletion protection, and force-push protection all remain present in the ruleset.
+Ruleset `17938598` binds `test`, `preview`, and `analyze` to the GitHub Actions integration (ID `15368`) so a
+similarly named status from another app cannot satisfy the gate. The global GitHub Actions app is not an
+installable bypass actor for this personal-account repository, so the ruleset deliberately has no bypass.
 
-Use the checked-in helper to audit or configure that exception:
+Use the checked-in helper to audit or configure the check set:
 
 ```bash
 # Safe default: GET the live ruleset, save a local JSON snapshot, and print a diff.
 ./scripts/configure_github_rules.sh
 
-# Explicitly apply the displayed bypass_actors-only update.
+# Explicitly apply the displayed required-status-check update.
 ./scripts/configure_github_rules.sh --apply
 ```
 
 The helper refuses to proceed if the ruleset is inactive, if `required_signatures` is absent, or if the
-proposed payload changes conditions or rules. Before an apply it stores the full pre-change response under
+proposed payload changes bypass actors, conditions, or non-status-check rules. Before an apply it stores the full pre-change response under
 `${TMPDIR:-/tmp}/oss-radar-ruleset-backups`; pass `--backup-dir PATH` to keep the audit copy elsewhere.
 `--apply` is an administrative repository change: review the diff and snapshot path before using it.
 
-The bypass is necessary but not sufficient by itself. `scripts/auto_triage.py` independently requires an exact
+`scripts/auto_triage.py` independently requires an exact
 title/branch/date match, repository-owner authorship, the expected labels, a single allowlisted file, a
-non-fork branch, and successful `test`, `preview`, and `analyze` checks. It scans up to 100 open PRs and lands
-daily reports oldest-first, so a backlog drains deterministically instead of remaining one blocked PR per day.
-Feature proposals have an additional exact-JSON-diff and minimum-lift check.
+non-fork branch, and successful `test`, `preview`, and `analyze` checks. If an eligible PR is behind, the bot
+uses GitHub's update-branch API and waits for all checks to rerun; it never requests an admin bypass. Feature
+proposals have an additional exact-JSON-diff and minimum-lift check.
 
 The same workflow consolidates repeated drift incidents only when they have the exact automation title,
 `oss-radar` + `model-drift` labels, and repository-owner authorship. It preserves the oldest issue as the
@@ -86,11 +83,10 @@ repository therefore cannot reuse the deploy identity merely because it runs on 
 ## The workflow, end to end
 
 1. Branch off `main`, commit (auto-signed).
-2. Open a PR → CI (`test`) + CodeQL run.
-3. CI green → squash-merge → `main` stays linear and green; maintainer commits remain signed, while exact bot PRs
-   use the documented pull-request-only integration bypass.
+2. Open a PR → CI (`test`) + live preview (`preview`) + CodeQL (`analyze`) run.
+3. All checks green on a branch current with `main` → squash-merge → `main` stays linear, signed, and green.
 
 ## What I'd add for a team
 
-Raise required approvals to ≥1, add a `CODEOWNERS` file and enable code-owner review, turn on
-`require_last_push_approval`, and promote CodeQL to a required status check.
+Raise required approvals to ≥1, enable code-owner review for the checked-in `CODEOWNERS`, and turn on
+`require_last_push_approval`.

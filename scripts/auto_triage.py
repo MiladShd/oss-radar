@@ -1,10 +1,9 @@
 """Maintain only narrowly allowlisted OSS Radar GitHub automation.
 
-Once ``scripts/configure_github_rules.sh --apply`` has installed the pull-request-only
-GitHub Actions bypass, the workflow token can complete bot PRs without weakening the
-signed-commit rule for direct pushes. Keep the policy here deliberately stricter than
-that permission: a PR must match a known bot branch, title, labels, author, exact file
-set, and green checks before an explicit admin squash merge is attempted.
+The workflow token has no ruleset bypass. A PR must match a known bot branch, title,
+labels, author, exact file set, be current with ``main``, and pass every required check.
+When an otherwise eligible PR is behind, this workflow asks GitHub to update the branch
+and waits for the checks to run again before attempting a normal squash merge.
 
 The same run also consolidates duplicate model-drift issues. It only touches issues
 with the exact automation title and labels, authored by the repository owner, and
@@ -328,6 +327,20 @@ def run(repo: str) -> int:
         if mergeable != "MERGEABLE":
             skipped.append((number, f"mergeability is {mergeable or 'unknown'}"))
             continue
+        if detail.get("mergeStateStatus") == "BEHIND":
+            ok, output = gh_try(
+                "api",
+                "--method",
+                "PUT",
+                f"repos/{repo}/pulls/{number}/update-branch",
+                "-f",
+                f"expected_head_sha={head_oid}",
+            )
+            if not ok:
+                merge_failures.append((number, f"branch update failed: {output}"))
+            else:
+                skipped.append((number, "updated with current main; waiting for checks"))
+            continue
 
         state, reason = checks_state(detail.get("statusCheckRollup") or [])
         if state != "ready":
@@ -340,7 +353,6 @@ def run(repo: str) -> int:
             number,
             "--repo",
             repo,
-            "--admin",
             "--squash",
             "--delete-branch",
             "--match-head-commit",

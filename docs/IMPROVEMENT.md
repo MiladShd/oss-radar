@@ -203,8 +203,8 @@ ImprovementScientist · open_pull_request · Proposed enabling 'recent_share' (�
 
 **Why this is bounded:** the candidate features are already implemented and tested; the PR is a
 one-file config toggle; CI, CodeQL, and the PR-preview bot re-run on the branch. Auto-triage then merges only an
-exact allowlisted feature addition after all three checks pass. The GitHub Actions ruleset exception is limited to
-pull-request merges, so it cannot bypass the direct-push rules on `main`.
+exact allowlisted feature addition after it is current with `main` and all three checks pass. The workflow has
+no ruleset bypass and performs a normal squash merge.
 
 An offline lift can be noise or can fail the stronger validation gate. Opening or even merging the proposal is
 therefore not presented as proof that production performance improved.

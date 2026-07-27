@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Safely add the GitHub Actions app as a pull-request-only ruleset bypass actor
-# and bind every required CI status check to that same Integration.
+# Safely bind every required CI status check to the GitHub Actions Integration.
+# This personal-account repository cannot add the global Actions app as a
+# bypass actor, so automation must satisfy the rules normally.
 #
 # The script is a GitHub API dry run by default: it reads the live ruleset,
 # writes a local snapshot, validates the required-signatures invariant, and
-# prints the proposed bypass_actors diff. Pass --apply to send the PUT request.
+# confirms bypass actors are unchanged while printing the proposed check diff.
+# Pass --apply to send the PUT request.
 set -euo pipefail
 
 readonly DEFAULT_REPOSITORY="MiladShd/oss-radar"
@@ -26,13 +28,13 @@ Usage: scripts/configure_github_rules.sh [options]
 
 Safely configure the active main-branch ruleset. By default this makes only a
 GET request to GitHub, saves the response locally, and displays the proposed
-change. It never updates GitHub unless --apply is supplied explicitly.
+required-check change. It never updates GitHub unless --apply is supplied.
 
 Options:
   --apply                 Update the GitHub ruleset after all checks pass.
   --repo OWNER/REPO       Repository (default: MiladShd/oss-radar).
   --ruleset-id ID         Repository ruleset ID (default: 17938598).
-  --app-id ID             GitHub Actions integration ID used for bypass and checks
+  --app-id ID             GitHub Actions integration ID used for required checks
                           (default: 15368).
   --backup-dir DIRECTORY  Directory for pre-change JSON snapshots.
   -h, --help              Show this help.
@@ -125,23 +127,15 @@ jq -e '
 jq -e '.rules | any(.type == "required_signatures")' "$current_json" >/dev/null \
   || die "required_signatures is absent; refusing to update a weakened ruleset"
 
-# PUT accepts only the ruleset update fields. Preserve each one except for the two intentional
-# changes: narrow this Integration actor to pull-request bypass and require the complete CI set,
-# with every required check bound to that verified GitHub Actions Integration.
+# PUT accepts only the ruleset update fields. Preserve every bypass actor and
+# every rule except for the intentional required-check change. Each check is
+# bound to the verified GitHub Actions Integration.
 jq --argjson app_id "$app_id" --argjson required_checks "$REQUIRED_CHECKS_JSON" '
   {
     name,
     target,
     enforcement,
-    bypass_actors: (
-      [.bypass_actors[]?
-        | select((.actor_type == "Integration" and .actor_id == $app_id) | not)]
-      + [{
-          actor_id: $app_id,
-          actor_type: "Integration",
-          bypass_mode: "pull_request"
-        }]
-    ),
+    bypass_actors,
     conditions,
     rules: [
       .rules[]
@@ -183,6 +177,7 @@ jq -e --slurp '
   | ($before.name == $after.name)
     and ($before.target == $after.target)
     and ($before.enforcement == $after.enforcement)
+    and ($before.bypass_actors == $after.bypass_actors)
     and ($before.conditions == $after.conditions)
     and (
       [$before.rules[] | select(.type != "required_status_checks")]
@@ -190,9 +185,9 @@ jq -e --slurp '
       [$after.rules[] | select(.type != "required_status_checks")]
     )
 ' "$current_json" "$proposed_json" >/dev/null \
-  || die "proposed payload changes fields outside bypass/status-check policy"
+  || die "proposed payload changes fields outside required-status-check policy"
 
-printf '\nProposed bypass_actors change:\n'
+printf '\nPreserved bypass_actors (no change):\n'
 diff -u \
   <(jq --sort-keys '.bypass_actors' "$current_json") \
   <(jq --sort-keys '.bypass_actors' "$proposed_json") || true
@@ -206,18 +201,6 @@ if jq -e --argjson app_id "$app_id" --argjson required_checks "$REQUIRED_CHECKS_
     | map({context: ., integration_id: $app_id})
     | sort_by(.context)) as $expected
   | (
-    ([.bypass_actors[]?
-        | select(.actor_type == "Integration" and .actor_id == $app_id)]
-      | length == 1)
-    and
-    ([.bypass_actors[]?
-        | select(
-            .actor_type == "Integration"
-            and .actor_id == $app_id
-            and .bypass_mode == "pull_request"
-          )]
-      | length == 1)
-    and
     ([.rules[] | select(.type == "required_status_checks")] | length == 1)
     and
     (
@@ -236,7 +219,7 @@ if jq -e --argjson app_id "$app_id" --argjson required_checks "$REQUIRED_CHECKS_
     )
   )
 ' "$current_json" >/dev/null; then
-  printf '\nNo update needed: bypass and app-bound required checks already match policy.\n'
+  printf '\nNo update needed: app-bound required checks already match policy.\n'
   exit 0
 fi
 
@@ -245,7 +228,7 @@ if [[ "$apply" != true ]]; then
   exit 0
 fi
 
-printf '\nApplying pull-request-only bypass for GitHub Actions app %s...\n' "$app_id"
+printf '\nApplying app-bound required checks for GitHub Actions app %s...\n' "$app_id"
 # Re-read immediately before the full PUT. Abort rather than overwriting a concurrent admin edit
 # made after the reviewed snapshot/proposed diff was produced.
 gh api --method GET "$endpoint" >"$latest_json"
@@ -259,20 +242,6 @@ jq -e --argjson app_id "$app_id" --argjson required_checks "$REQUIRED_CHECKS_JSO
     | sort_by(.context)) as $expected
   | (
     (.rules | any(.type == "required_signatures"))
-    and (
-      [.bypass_actors[]?
-        | select(.actor_type == "Integration" and .actor_id == $app_id)]
-      | length == 1
-    )
-    and (
-      [.bypass_actors[]?
-        | select(
-            .actor_type == "Integration"
-            and .actor_id == $app_id
-            and .bypass_mode == "pull_request"
-          )]
-      | length == 1
-    )
     and
     ([.rules[] | select(.type == "required_status_checks")] | length == 1)
     and
@@ -298,6 +267,7 @@ jq -e --slurp '
   | ($before.name == $after.name)
     and ($before.target == $after.target)
     and ($before.enforcement == $after.enforcement)
+    and ($before.bypass_actors == $after.bypass_actors)
     and ($before.conditions == $after.conditions)
     and (
       [$before.rules[] | select(.type != "required_status_checks")]
@@ -305,7 +275,7 @@ jq -e --slurp '
       [$after.rules[] | select(.type != "required_status_checks")]
     )
 ' "$current_json" "$response_json" >/dev/null \
-  || die "GitHub response changed fields outside bypass/status-check policy; inspect $snapshot_path"
+  || die "GitHub response changed fields outside required-status-check policy; inspect $snapshot_path"
 
-printf 'Ruleset updated and verified. Signed commits and all three app-bound CI checks remain required.\n'
+printf 'Ruleset updated and verified. No bypass was added; signed commits and all three app-bound CI checks are required.\n'
 printf 'Rollback source: %s\n' "$snapshot_path"
