@@ -1,6 +1,6 @@
 """Dependency-audit parsing + verdict logic (the version-aware honesty rules)."""
 from oss_radar.audit import parse_requirements
-from oss_radar.audit.auditor import _verdict
+from oss_radar.audit.auditor import _reason_list, _verdict
 
 
 def test_parse_extracts_name_and_pinned_version():
@@ -38,3 +38,12 @@ def test_verdict_is_version_aware():
     assert _verdict(10, 0, None, 400, False, 0.0, "historical")[0] == "watch"
     # archived upstream => critical regardless
     assert _verdict(0, 0, None, 1, True, 0.0, "active")[0] == "critical"
+
+
+def test_prediction_reason_json_is_normalized_for_bigquery_and_duckdb():
+    expected = ["recent vulnerabilities", "issue backlog pressure"]
+
+    assert _reason_list(expected) == expected
+    assert _reason_list('["recent vulnerabilities", "issue backlog pressure"]') == expected
+    assert _reason_list("not json") == []
+    assert _reason_list({"reason": "wrong shape"}) == []

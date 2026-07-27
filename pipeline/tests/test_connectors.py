@@ -280,6 +280,105 @@ def test_github_redirect_uses_canonical_repo_for_all_followup_calls():
     assert all("new-org/widget" in str(call) for call in followups)
 
 
+class _MovedGitHubClient:
+    def __init__(self):
+        self.calls = []
+
+    def get_json(self, url: str, params: dict | None = None):
+        self.calls.append((url, params))
+        if url.endswith("/repos/old-org/widget"):
+            return {
+                "full_name": "old-org/widget",
+                "archived": True,
+                "description": (
+                    "This library moved to "
+                    "https://github.com/new-org/monorepo/tree/main/packages/widget"
+                ),
+            }
+        if url.endswith("/repos/new-org/monorepo"):
+            return {
+                "full_name": "new-org/monorepo",
+                "archived": False,
+                "stargazers_count": 50,
+                "topics": ["monorepo"],
+                "language": "Python",
+            }
+        if url.endswith("/repos/new-org/monorepo/stats/participation"):
+            return {"all": [0] * 51 + [7]}
+        if "repo:new-org/monorepo" in str((params or {}).get("q")):
+            return {"total_count": 2}
+        raise AssertionError(f"unexpected GitHub request: {url} {params}")
+
+
+def test_github_archived_move_follows_one_successor_repository():
+    client = _MovedGitHubClient()
+
+    result = github.fetch(client, "old-org", "widget")
+
+    assert result["_ok"] is True
+    assert result["repository_moved_from"] == "old-org/widget"
+    assert result["canonical_repo"] == "new-org/monorepo"
+    assert result["archived"] is False
+    assert result["commit_count_4w"] == 7
+    assert github.parse_moved_repository({
+        "archived": False,
+        "description": "moved to https://github.com/new-org/monorepo",
+    }) is None
+
+
+def test_collector_uses_github_successor_for_other_repo_connectors(monkeypatch):
+    repo_calls = []
+    deps_calls = []
+    monkeypatch.setattr(collector.ecosystems, "fetch_package", lambda *_: {"_ok": True})
+    monkeypatch.setattr(
+        collector.pypi_metadata,
+        "fetch",
+        lambda *_: {
+            "_ok": True,
+            "repo_url": "https://github.com/old-org/widget",
+        },
+    )
+    monkeypatch.setattr(
+        collector.pypi_downloads,
+        "fetch",
+        lambda *_: {"_ok": True, "downloads_7d": 10, "history": []},
+    )
+    monkeypatch.setattr(collector.osv, "fetch", lambda *_: {"_ok": True})
+    monkeypatch.setattr(
+        collector.github,
+        "fetch",
+        lambda *_: {
+            "_ok": True,
+            "canonical_repo": "new-org/monorepo",
+            "repository_moved_from": "old-org/widget",
+            "archived": False,
+        },
+    )
+
+    def fetch_repo(_client, owner, repo):
+        repo_calls.append((owner, repo))
+        return {"_ok": True, "archived": False}
+
+    def fetch_deps(_client, name, owner, repo):
+        deps_calls.append((name, owner, repo))
+        return {"_ok": True}
+
+    monkeypatch.setattr(collector.ecosystems, "fetch_repo", fetch_repo)
+    monkeypatch.setattr(collector.depsdev, "fetch", fetch_deps)
+
+    snapshot = collector.collect_one(
+        {"name": "widget", "category": "framework"},
+        object(),
+        object(),
+        "run-1",
+    )["snapshot"]
+
+    assert snapshot["repo"] == "new-org/monorepo"
+    assert snapshot["archived"] is False
+    assert repo_calls == [("new-org", "monorepo")]
+    assert deps_calls == [("widget", "new-org", "monorepo")]
+
+
 def test_collector_records_each_connector_status(monkeypatch):
     monkeypatch.setattr(
         collector.ecosystems,

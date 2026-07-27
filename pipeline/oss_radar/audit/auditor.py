@@ -13,6 +13,7 @@ vulns actually affect that version (the real exposure), instead of the package's
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import tomllib
@@ -124,6 +125,18 @@ def _num(v):
         return None
 
 
+def _reason_list(value) -> list[str]:
+    """Normalize JSON-backed prediction reasons before presenting an audit."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and item][:2]
+
+
 def _trend_pct(series: list[float]) -> float | None:
     if len(series) < 14:
         return None
@@ -228,7 +241,7 @@ def audit_packages(deps, settings=None, on_demand: bool = True, max_on_demand: i
             p = ps.get(name)
             if p is not None and _num(p.get("risk_score")) is not None:
                 risk = _num(p.get("risk_score"))
-                reasons = [str(x) for x in (p.get("top_reasons") or [])][:2]
+                reasons = _reason_list(p.get("top_reasons"))
             else:
                 risk, reasons = risk_composite(snap)
             trend = trends.get(name)

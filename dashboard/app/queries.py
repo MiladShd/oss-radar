@@ -195,7 +195,7 @@ def _source_health(wh) -> list[dict]:
 
 
 def system_health(limit: int = 30) -> dict:
-    """Run-level health summary for the dashboard system page."""
+    """Current health summary with recent run history retained for inspection."""
     wh = _wh()
     try:
         runs_df = wh.query_df(f"SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT {int(limit)}")
@@ -241,7 +241,7 @@ def system_health(limit: int = 30) -> dict:
 
     issues = []
     warnings = []
-    for r in runs:
+    for index, r in enumerate(runs):
         status = str(r.get("status") or "").lower()
         if status == "running":
             running_age = _age_hours(r.get("started_at"))
@@ -257,13 +257,15 @@ def system_health(limit: int = 30) -> dict:
                 ),
             }
             (issues if running_age is None or running_age > 1.0 else warnings).append(record)
-        elif status not in ("success", "ok"):
+        elif index == 0 and status not in ("success", "ok"):
             issues.append({
                 "run_id": r.get("run_id"), "ts": r.get("finished_at") or r.get("started_at"),
                 "source": "pipeline", "status": r.get("status") or "unknown",
                 "summary": f"Pipeline run ended with status {r.get('status') or 'unknown'}",
             })
-    for a in acts:
+    # Recovered warnings remain visible in run/agent history, but they must not keep
+    # the current service badge yellow after a later clean run.
+    for a in latest_acts:
         status = str(a.get("status") or "").lower()
         row = {
             "run_id": a.get("run_id"), "ts": a.get("ts"), "source": a.get("agent"),
