@@ -39,6 +39,15 @@ test each contain only one origin date and their 70-day outcome windows overlap;
 comparable to the retired row-random metric. Independent temporal growth evidence requires additional closed,
 non-overlapping production cohorts.
 
+## Reusable demo / LinkedIn blurb
+
+> I built OSS Radar, a daily GCP data and ML product that tracks 91 Python/AI packages across six public providers,
+> ranks adoption momentum, and surfaces dependency risk in a FastAPI dashboard. The repository combines
+> DuckDB/BigQuery storage, causal LightGBM features, package-disjoint validation, model-promotion governance,
+> drift/source-health monitoring, and an exact-SHA Terraform/GitHub Actions release path. The important engineering
+> result is not “AI improves itself every day”; it is that candidates, failures, releases, and limitations are
+> observable, bounded, and reproducible.
+
 ## Résumé bullets
 
 > Built and deployed a daily GCP open-source intelligence platform tracking 91 Python/AI packages across six
@@ -60,8 +69,24 @@ non-overlapping production cohorts.
 > generalization gate; published unseen-package Spearman `0.683` versus a calibrated-persistence rank baseline
 > `0.370`, with a separate package-block permutation test showing rank signal at `p < .001`.
 
-> Built bounded repository automation that drains exact green daily-report PRs, validates one-file model-feature
-> proposals, and consolidates duplicate drift incidents without granting direct-push bypass to automation.
+## Interview defense
+
+- **Why split by forecast-origin date?** Rows sharing one as-of date have overlapping information, so their entire
+  date group stays in one chronological partition. Package-disjoint evaluation separately measures cross-sectional
+  generalization, and the current short history is not presented as independent time-forward evidence.
+- **Why champion/challenger?** A candidate should not replace a working artifact merely because it trained later.
+  The incumbent is re-scored on the candidate's exact compatible cohort; incomparable or losing candidates are
+  retained as evidence but not served.
+- **Why deterministic operational roles instead of an autonomous agent?** Ingestion checks, promotion gates, and
+  repository actions need repeatable inputs, bounded permissions, and auditable outcomes. Claude may rewrite brief
+  prose, but it does not transform data, train the models, or make predictions.
+- **Why no Spark, Airflow, or dbt?** Ninety-one packages, one daily job, and a small portable transformation path fit
+  pandas plus Cloud Scheduler/Cloud Run. Add distributed compute, DAG orchestration, or warehouse-native modeling
+  only when measured data volume, dependency/backfill complexity, or shared SQL ownership requires it; see
+  [ARCHITECTURE.md](ARCHITECTURE.md#deliberate-stack-tradeoffs).
+- **How is the public dashboard defended?** Package queries use strict name validation and warehouse parameters;
+  read responses have a short process-local cache; live audits have body/rate limits; Cloud Run has a bounded
+  instance count; and health, first-run, and error states avoid treating missing data as success.
 
 ## Interview-safe claims
 

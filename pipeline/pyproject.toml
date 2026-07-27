@@ -14,6 +14,10 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["oss_radar*"]
 
+[tool.setuptools.package-data]
+"oss_radar.config" = ["*.json"]
+"oss_radar.ingest.fixtures" = ["*.json"]
+
 [project.scripts]
 oss-radar = "oss_radar.cli:main"
 

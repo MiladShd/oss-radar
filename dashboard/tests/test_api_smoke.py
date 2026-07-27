@@ -59,12 +59,14 @@ def _seed(path: str) -> DuckDBWarehouse:
          "repo": "vllm-project/vllm", "stars": 30000, "forks": 4000,
          "monthly_downloads": 5_000_000, "downloads_7d": 1_200_000,
          "dependent_repos_count": 1200, "vuln_count": 0, "scorecard_overall": 7.5,
-         "days_since_last_release": 5.0, "bus_factor": 8.0, "archived": False},
+         "days_since_last_release": 5.0, "bus_factor": 8.0, "archived": False,
+         "source_status": {"github": True, "osv": True, "pypi_downloads": True}},
         {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "langchain", "category": "framework",
          "repo": "langchain-ai/langchain", "stars": 90000, "forks": 14000,
          "monthly_downloads": 20_000_000, "downloads_7d": 4_800_000,
          "dependent_repos_count": 8000, "vuln_count": 2, "scorecard_overall": 5.0,
-         "days_since_last_release": 1.0, "bus_factor": 3.0, "archived": False},
+         "days_since_last_release": 1.0, "bus_factor": 3.0, "archived": False,
+         "source_status": {"github": False, "osv": True, "pypi_downloads": True}},
         {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "my-package", "category": "test",
          "downloads_7d": 11},
         {"run_id": RUN_ID, "snapshot_date": _TODAY, "name": "my.package", "category": "test",
@@ -142,6 +144,38 @@ def test_overview_serves_seeded_data(client):
     assert body["movers"][0]["name"] == "vllm"
     # risks are sorted by risk desc -> langchain leads
     assert body["risks"][0]["name"] == "langchain"
+    assert body["warehouse"].endswith("smoke.duckdb")
+    source_health = {row["source"]: row for row in body["source_health"]}
+    assert source_health["github"]["success_rate"] == 0.5
+    assert source_health["github"]["status"] == "degraded"
+    assert "export OSS_RADAR_GITHUB_TOKEN" in source_health["github"]["guidance"]
+    assert "Secret Manager" not in source_health["github"]["guidance"]
+    assert source_health["osv"]["status"] == "healthy"
+
+
+def test_cloud_source_health_uses_secret_manager_recovery_guidance():
+    from dashboard.app import queries
+
+    class CloudWarehouse:
+        project = "oss-radar-test"
+        dataset = "oss_radar"
+
+        def query_df(self, _sql):
+            return pd.DataFrame([
+                {"source_status": {"github": False, "osv": True}},
+            ])
+
+    source_health = {
+        row["source"]: row
+        for row in queries._source_health(CloudWarehouse())
+    }
+
+    guidance = source_health["github"]["guidance"]
+    assert source_health["github"]["status"] == "down"
+    assert "oss-radar-github-token" in guidance
+    assert "Secret Manager" in guidance
+    assert "docs/OPERATIONS.md" in guidance
+    assert "export OSS_RADAR_GITHUB_TOKEN" not in guidance
 
 
 def test_packages_lists_every_scored_package(client):
@@ -238,6 +272,9 @@ def test_dashboard_uses_scoped_reason_fallback_and_describes_risk_formula():
     assert 'scopedReasons(p,"risk")' in html
     assert "calibrated classifier" in html
     assert "categorical safety floors" in html
+    assert 'id="sourceHealth"' in html
+    assert "o.source_health" in html
+    assert "s.guidance" in html
 
 
 @pytest.mark.parametrize(
@@ -357,16 +394,42 @@ def test_empty_warehouse_degrades_gracefully(tmp_path, monkeypatch):
 
     empty = DuckDBWarehouse(path=str(tmp_path / "empty.duckdb"))  # no init_schema
     monkeypatch.setattr(queries, "_wh_cache", empty, raising=False)
+    main._response_cache.clear()
     try:
         c = TestClient(main.app)
         assert c.get("/healthz").status_code == 200
         overview = c.get("/api/overview")
         assert overview.status_code == 200
-        assert overview.json()["tracked"] == 0
-        assert overview.json()["data_state"] == "error"
+        overview_body = overview.json()
+        assert overview_body["tracked"] == 0
+        assert overview_body["data_state"] == "error"
+        assert overview_body["warehouse"] == empty.path
+        assert overview_body["setup_command"] == "make demo"
         assert c.get("/api/packages").json() == []
         system = c.get("/api/system-health").json()
         assert system["status"] == "unknown"
         assert system["data_state"] == "error"
+        assert system["warehouse"] == empty.path
     finally:
+        main._response_cache.clear()
+        empty.close()
+
+
+def test_initialized_warehouse_has_explicit_first_run_state(tmp_path, monkeypatch):
+    from dashboard.app import main, queries
+
+    empty = DuckDBWarehouse(path=str(tmp_path / "first-run.duckdb"))
+    empty.init_schema()
+    monkeypatch.setattr(queries, "_wh_cache", empty, raising=False)
+    main._response_cache.clear()
+    try:
+        body = TestClient(main.app).get("/api/overview").json()
+
+        assert body["data_state"] == "empty"
+        assert body["tracked"] == 0
+        assert body["warehouse"] == empty.path
+        assert body["setup_command"] == "make demo"
+        assert body["source_health"] == []
+    finally:
+        main._response_cache.clear()
         empty.close()

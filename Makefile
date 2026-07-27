@@ -1,5 +1,5 @@
 # OSS Radar — convenience entry points. See scripts/demo_local.sh for details.
-.PHONY: demo dashboard test help
+.PHONY: demo smoke dashboard test help
 .DEFAULT_GOAL := help
 
 help: ## Show this help
@@ -8,6 +8,9 @@ help: ## Show this help
 
 demo: ## Fresh clone -> local pipeline run -> view instructions (no cloud needed)
 	@bash scripts/demo_local.sh $(ARGS)
+
+smoke: ## Deterministic 3-package run (installed deps; Python network/process guard)
+	@.venv/bin/python -m oss_radar.cli smoke --out .artifacts/smoke
 
 dashboard: ## Serve the dashboard against the local DuckDB warehouse
 	@.venv/bin/uvicorn dashboard.app.main:app --port 8099

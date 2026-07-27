@@ -18,6 +18,7 @@ models_local/*.txt
 data/
 *.parquet
 mlruns/
+.artifacts/
 
 # Secrets & local GCP state
 .gcp_project

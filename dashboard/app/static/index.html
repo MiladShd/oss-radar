@@ -219,6 +219,11 @@ tr.row:hover td{background:var(--panel2)}
     </div>
     <div class="first-run" id="firstRun" hidden></div>
     <div class="kpis" id="kpis"></div>
+    <div class="panel" style="margin-bottom:18px">
+      <h3><span class="dot" style="background:var(--teal)"></span> Source health</h3>
+      <div class="sub">Latest per-source success rates; below 70% is degraded.</div>
+      <div id="sourceHealth"><div class="loading">scanning sources…</div></div>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h3><span class="dot" style="background:var(--teal)"></span> Momentum movers</h3>
@@ -458,12 +463,18 @@ async function loadOverview(){
     ["rising fast",o.rising??0,""],
     ["high risk",o.high_risk??0,""]
   ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
+  const sourceRows=o.source_health||[];
+  $("#sourceHealth").innerHTML=sourceRows.length?`<table><thead><tr><th>Source</th><th class="num">Success</th><th>Status</th></tr></thead>
+    <tbody>${sourceRows.map(s=>`<tr><td class="mono">${esc(s.source)}</td><td class="num">${Math.round((s.success_rate||0)*100)}%</td>
+      <td><span class="dot" style="background:${healthDot(s.status)}"></span> ${esc(s.status)}
+      ${s.guidance?`<div class="sub">${esc(s.guidance)}</div>`:""}</td></tr>`).join("")}</tbody></table>`
+    :"<div class='loading'>no source status recorded yet</div>";
   $("#movers").innerHTML=(o.movers||[]).map(p=>moverRow(p,"momentum_score",momColor,"momentum_label")).join("")||"<div class='loading'>run the pipeline to populate</div>";
   $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>run the pipeline to populate</div>";
 }
 
 function healthClass(s){return s==="green"?"health-green":s==="yellow"?"health-yellow":s==="red"?"health-red":"health-unknown";}
-function healthDot(s){return s==="green"||s==="ok"||s==="success"?"var(--teal)":s==="yellow"||s==="warning"?"var(--amber)":s==="red"||s==="error"?"var(--red)":"var(--faint)";}
+function healthDot(s){return s==="green"||s==="ok"||s==="success"||s==="healthy"?"var(--teal)":s==="yellow"||s==="warning"||s==="degraded"?"var(--amber)":s==="red"||s==="error"||s==="down"?"var(--red)":"var(--faint)";}
 function dur(sec){return sec==null?"—":sec<60?sec.toFixed(1)+"s":(sec/60).toFixed(1)+"m";}
 function shortTs(ts){return ts?String(ts).replace("T"," ").replace("Z","").slice(0,16):"—";}
 

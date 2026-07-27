@@ -39,7 +39,13 @@ _DEFAULT_MIN_INTERVAL = 0.1
 
 
 class RateLimited(Exception):
-    """Raised on HTTP 429/5xx so tenacity retries with backoff."""
+    """Retryable HTTP response, with status retained for circuit-break decisions."""
+
+    def __init__(self, status_code: int, url: str, retry_after: float | None = None):
+        super().__init__(f"{status_code} for {url}")
+        self.status_code = status_code
+        self.url = url
+        self.retry_after = retry_after
 
 
 class HttpClient:
@@ -51,9 +57,29 @@ class HttpClient:
             self._session.headers.update(extra_headers)
         self._last_call: dict[str, float] = defaultdict(float)
         self._locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+        self._circuit_until: dict[str, float] = defaultdict(float)
+        self._circuit_lock = threading.Lock()
+
+    @staticmethod
+    def _host(url: str) -> str:
+        return urlparse(url).netloc
+
+    def _circuit_open(self, url: str) -> bool:
+        host = self._host(url)
+        with self._circuit_lock:
+            return self._circuit_until[host] > time.monotonic()
+
+    def _open_circuit(self, url: str, seconds: float | None = None) -> None:
+        host = self._host(url)
+        cooldown = max(1.0, seconds or 60.0)
+        with self._circuit_lock:
+            self._circuit_until[host] = max(
+                self._circuit_until[host],
+                time.monotonic() + cooldown,
+            )
 
     def _throttle(self, url: str) -> None:
-        host = urlparse(url).netloc
+        host = self._host(url)
         floor = _HOST_MIN_INTERVAL.get(host, _DEFAULT_MIN_INTERVAL)
         # per-host lock so concurrent workers genuinely respect the floor (no bursts)
         with self._locks[host]:
@@ -77,14 +103,29 @@ class HttpClient:
             return None
         # 403 from GitHub search = secondary rate limit; back off and retry.
         if resp.status_code in (429, 403) or resp.status_code >= 500:
-            raise RateLimited(f"{resp.status_code} for {url}")
+            retry_after = None
+            raw_retry_after = getattr(resp, "headers", {}).get("Retry-After")
+            if raw_retry_after:
+                try:
+                    retry_after = float(raw_retry_after)
+                except ValueError:
+                    pass
+            raise RateLimited(resp.status_code, url, retry_after)
         resp.raise_for_status()
         return resp
 
     def get_json(self, url: str, params: dict | None = None,
                  headers: dict | None = None) -> Any | None:
+        if self._circuit_open(url):
+            log.warning("http.circuit_open", url=url)
+            return None
         try:
             resp = self._request("GET", url, params=params, headers=headers)
+        except RateLimited as exc:
+            if exc.status_code in (403, 429):
+                self._open_circuit(url, exc.retry_after)
+            log.warning("http.get_failed", url=url, error=str(exc))
+            return None
         except Exception as exc:  # noqa: BLE001 — connectors decide how to degrade
             log.warning("http.get_failed", url=url, error=str(exc))
             return None
@@ -97,8 +138,16 @@ class HttpClient:
             return None
 
     def post_json(self, url: str, json_body: dict, headers: dict | None = None) -> Any | None:
+        if self._circuit_open(url):
+            log.warning("http.circuit_open", url=url)
+            return None
         try:
             resp = self._request("POST", url, json=json_body, headers=headers)
+        except RateLimited as exc:
+            if exc.status_code in (403, 429):
+                self._open_circuit(url, exc.retry_after)
+            log.warning("http.post_failed", url=url, error=str(exc))
+            return None
         except Exception as exc:  # noqa: BLE001
             log.warning("http.post_failed", url=url, error=str(exc))
             return None
@@ -111,8 +160,16 @@ class HttpClient:
 
     def get_text(self, url: str, headers: dict | None = None) -> str | None:
         """Plain-text GET (e.g. a raw requirements.txt). Returns None on any failure."""
+        if self._circuit_open(url):
+            log.warning("http.circuit_open", url=url)
+            return None
         try:
             resp = self._request("GET", url, headers=headers)
+        except RateLimited as exc:
+            if exc.status_code in (403, 429):
+                self._open_circuit(url, exc.retry_after)
+            log.warning("http.get_failed", url=url, error=str(exc))
+            return None
         except Exception as exc:  # noqa: BLE001
             log.warning("http.get_failed", url=url, error=str(exc))
             return None

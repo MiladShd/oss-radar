@@ -13,7 +13,7 @@ oss-radar/
 │   ├── registry/        # cohort-aware promotion, durable GCS artifacts, local MLflow trace
 │   ├── agents/          # optional Claude wrapper + 7-agent operations crew + GitHub ops
 │   ├── orchestrator/    # the end-to-end daily pipeline
-│   └── cli.py           # `oss-radar run | init-warehouse | info`
+│   └── cli.py           # `oss-radar run | smoke | init-warehouse | info`
 ├── dashboard/app/       # FastAPI backend + single-file SPA
 ├── infra/               # Terraform + Cloud Build config
 ├── scripts/             # deploy, report preview, validation, and auto-triage helpers
@@ -42,6 +42,27 @@ happens in pandas.
 Platt calibration, then evaluates calibrated probabilities on a stable reserved-package holdout. The 60/40
 composite/classifier blend cannot cross below explicit archived/removed or recent high/critical vulnerability
 safety floors.
+
+## Deliberate stack tradeoffs
+
+OSS Radar currently tracks 91 packages through one daily collection, training, scoring, and reporting flow. Its
+roughly 180-day source windows fit comfortably in one pandas process, while DuckDB and BigQuery provide the local
+and managed warehouse paths. At this scale, adding distributed compute or a separate orchestration layer would add
+more deployment, lineage, and failure modes than useful capacity.
+
+- **No Spark:** the working set fits in memory and the expensive work is upstream API latency plus small-model
+  training, not a distributed scan or shuffle. Revisit Spark if package/history coverage grows by orders of
+  magnitude, daily transforms no longer fit a single worker, or distributed feature computation becomes the
+  measured bottleneck.
+- **No Airflow:** Cloud Scheduler invokes one Cloud Run Job with one observable pipeline lifecycle. Revisit a DAG
+  orchestrator when independently scheduled pipelines need dependency-aware backfills, cross-job SLAs, or
+  multi-team ownership.
+- **No dbt:** feature and label construction is Python/model code shared by DuckDB and BigQuery, rather than a large
+  SQL transformation graph. Revisit dbt when warehouse-native models become the dominant transformation layer and
+  shared SQL lineage, tests, and ownership contracts justify it.
+
+These are scale and complexity decisions, not résumé-keyword omissions. New infrastructure should answer a measured
+operational constraint.
 
 ## Warehouse tables
 

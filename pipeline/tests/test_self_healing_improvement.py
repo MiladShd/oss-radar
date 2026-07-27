@@ -1,7 +1,7 @@
 """Self-healing (ingest retry/carry-forward) and self-improvement (feature experiments)."""
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pandas as pd
@@ -111,11 +111,18 @@ def test_carry_forward_restores_last_good(tmp_path):
     wh.insert_rows("snapshots", [{
         "run_id": "r0", "snapshot_date": date(2026, 6, 1), "name": "pkg", "category": "llm",
         "downloads_7d": 500, "stars": 100, "vuln_count": 2,
+        "source_status": {"pypi_downloads": True, "github": True},
+        "ingested_at": datetime(2026, 6, 1, 12, tzinfo=UTC),
     }])
+    attempted_at = datetime(2026, 6, 15, 12, tzinfo=UTC)
+    failed_status = {"pypi_downloads": False, "github": False}
     snapshots = [{"run_id": "r1", "snapshot_date": date(2026, 6, 15), "name": "pkg",
-                  "category": "llm", "downloads_7d": None}]
+                  "category": "llm", "downloads_7d": None,
+                  "source_status": failed_status, "ingested_at": attempted_at}]
     healed = _carry_forward(wh, "r1", ["pkg"], snapshots, {"pkg": 0})
     assert healed == 1
     assert snapshots[0]["downloads_7d"] == 500   # carried forward from last good
     assert snapshots[0]["stars"] == 100
     assert snapshots[0]["run_id"] == "r1"          # identity is the current run
+    assert snapshots[0]["source_status"] == failed_status
+    assert snapshots[0]["ingested_at"] == attempted_at

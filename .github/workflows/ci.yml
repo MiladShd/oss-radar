@@ -29,6 +29,43 @@ jobs:
           actionlint
           shellcheck scripts/*.sh
           ruff check pipeline/oss_radar pipeline/tests dashboard scripts
+      - name: Verify built wheel contents and entry points
+        run: |
+          wheel_dir="$RUNNER_TEMP/oss-radar-wheel"
+          install_dir="$RUNNER_TEMP/oss-radar-wheel-install"
+          python -m pip wheel --no-deps ./pipeline -w "$wheel_dir"
+          python -m pip install --no-deps --target "$install_dir" "$wheel_dir"/oss_radar-*.whl
+          PYTHONPATH="$install_dir" python - <<'PY'
+          import json
+          from importlib import resources
+          from pathlib import Path
+
+          import oss_radar
+          from oss_radar import cli, validate_growth
+
+          install_dir = Path(__import__("os").environ["PYTHONPATH"]).resolve()
+          assert install_dir in Path(oss_radar.__file__).resolve().parents
+          expected = {
+              "config/active_features.json",
+              "ingest/fixtures/smoke.json",
+              "validate_growth.py",
+          }
+          root = resources.files("oss_radar")
+          missing = sorted(path for path in expected if not root.joinpath(path).is_file())
+          assert not missing, f"wheel is missing runtime files: {missing}"
+          assert json.loads(root.joinpath("config/active_features.json").read_text())["download"]
+          assert callable(validate_growth.main)
+          try:
+              cli.main(["--help"])
+          except SystemExit as exc:
+              assert exc.code == 0
+          else:
+              raise AssertionError("CLI help did not exit normally")
+          PY
+          smoke_json="$RUNNER_TEMP/oss-radar-wheel-smoke.json"
+          PYTHONPATH="$install_dir" python -m oss_radar.cli smoke \
+            --out "$RUNNER_TEMP/oss-radar-wheel-smoke" > "$smoke_json"
+          python -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data["mode"] == "fixture-offline"' "$smoke_json"
       - name: Validate Terraform
         run: |
           terraform -chdir=infra/terraform fmt -check -diff
@@ -40,6 +77,8 @@ jobs:
           pip-audit -r dashboard/requirements.txt
       - name: Validation gate (leak guard — blocks merge if the gate regresses)
         run: pytest pipeline/tests/test_validation_gate.py -q
+      - name: Deterministic source-tree end-to-end smoke
+        run: python -m oss_radar.cli smoke --out "$RUNNER_TEMP/oss-radar-smoke"
       - name: Test pipeline
         run: pytest pipeline/tests -q
       - name: Test dashboard

@@ -52,8 +52,12 @@ def test_validation_upload_failure_is_not_reported_as_success(monkeypatch, tmp_p
 
 
 def test_validation_run_requires_every_reproducibility_artifact(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli.subprocess, "run", MagicMock())
+    run = MagicMock()
+    monkeypatch.setattr(cli.subprocess, "run", run)
     monkeypatch.setattr(cli, "_check_wolfram_staleness", MagicMock())
 
     with pytest.raises(RuntimeError, match="did not produce required artifacts"):
         cli._run_validation(_settings(), str(tmp_path), upload=False, staleness_hours=36)
+
+    command = run.call_args.args[0]
+    assert command[1:] == ["-m", "oss_radar.validate_growth"]

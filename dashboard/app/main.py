@@ -109,8 +109,10 @@ def healthz():
 def api_overview():
     return JSONResponse(_cached("overview", queries.overview, {
         "data_state": "error",
+        "warehouse": queries.active_warehouse_label(),
         "setup_command": "make demo",
         "tracked": 0,
+        "source_health": [],
         "movers": [],
         "risks": [],
     }))
@@ -155,7 +157,9 @@ def api_runs():
 @app.get("/api/system-health")
 def api_system_health():
     return JSONResponse(_cached("system-health:30", queries.system_health, {
-        "data_state": "error", "status": "unknown", "headline": "system health unavailable",
+        "data_state": "error", "warehouse": queries.active_warehouse_label(),
+        "setup_command": "make demo",
+        "status": "unknown", "headline": "system health unavailable",
         "run_days": 0, "total_runs": 0, "error_count": 0, "warning_count": 0,
         "logs": [], "issues": [], "runs": [],
     }))

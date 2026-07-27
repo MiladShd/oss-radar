@@ -29,6 +29,12 @@ export ANTHROPIC_API_KEY
 unset ANTHROPIC_API_KEY
 ```
 
+The documented local secret paths and credential-file patterns are ignored by Git, including `.env`,
+`.gcp_project`, `*-key.json`, `service-account*.json`, Application Default Credentials, and temporary
+`gha-creds-*.json` files. Ignore rules are not a secret store: never commit a key or token, never paste one into a
+command that will remain in shell history, and add any differently named local secret file to `.gitignore` before
+using it. Prefer the prompt above and Secret Manager for deployed values.
+
 `scripts/deploy.sh`:
 
 1. Enables the required Google Cloud APIs.

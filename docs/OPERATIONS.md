@@ -16,6 +16,7 @@ source .venv/bin/activate
 .venv/bin/python -m pip install --no-deps -e pipeline
 
 make test
+make smoke
 .venv/bin/python -m ruff check pipeline/oss_radar pipeline/tests dashboard scripts
 actionlint
 shellcheck scripts/*.sh
@@ -26,9 +27,10 @@ terraform -chdir=infra/terraform init -backend=false -input=false
 terraform -chdir=infra/terraform validate
 ```
 
-CI repeats the dependency audits, workflow/shell lint, Terraform initialization/validation, leak-gate tests,
-pipeline tests, and dashboard tests. A release is not ready because only the model tests pass; automation syntax
-and the dashboard health contract are part of the release.
+CI repeats the deterministic fixture smoke under a Python DNS/socket and child-process guard, checks the built
+wheel, audits dependencies, lints workflows/shell/Python, validates Terraform, and runs the leak gate plus pipeline
+and dashboard tests. A release is not ready because only the model tests pass; automation syntax and the dashboard
+health contract are part of the release.
 
 ## 2. One-time GitHub activation
 
@@ -158,7 +160,82 @@ gcloud run jobs execute oss-radar-pipeline \
 
 Then confirm the latest `/api/runs` record is successful and reports the deployed SHA.
 
-## 5. Rollback
+## 5. Pre-share public-dashboard gate
+
+Treat the live URL as current portfolio evidence only when all of these are true:
+
+- `/healthz` returns HTTP 200 and the exact expected full Git SHA;
+- `/api/system-health` is readable and does not report an error/unknown data state;
+- the latest pipeline run is successful, finished within **48 hours**, and reports the deployed SHA;
+- the overview has nonzero tracked packages and the latest run has nonzero predictions; and
+- model history and agent activity are both populated.
+
+The following read-only check enforces that contract:
+
+```bash
+DASHBOARD_URL="$dashboard_url" EXPECTED_SHA="$(git rev-parse HEAD)" python3 - <<'PY'
+import datetime as dt
+import json
+import os
+import re
+import urllib.request
+
+base = os.environ["DASHBOARD_URL"].rstrip("/")
+expected = os.environ["EXPECTED_SHA"]
+if not re.fullmatch(r"[0-9a-f]{40}", expected):
+    raise SystemExit("expected SHA is not a full lowercase commit")
+
+def get(path):
+    with urllib.request.urlopen(base + path, timeout=20) as response:
+        if response.status != 200:
+            raise SystemExit(f"{path}: HTTP {response.status}")
+        return json.load(response)
+
+health = get("/healthz")
+system = get("/api/system-health")
+overview = get("/api/overview")
+runs = get("/api/runs")
+models = get("/api/models")
+agents = get("/api/agents")
+
+if health.get("status") != "ok" or health.get("git_sha") != expected:
+    raise SystemExit("dashboard health/provenance does not match the expected SHA")
+if system.get("data_state") != "ready" or system.get("status") not in {"green", "yellow"}:
+    raise SystemExit("system health is not ready for public sharing")
+if not runs or runs[0].get("status") != "success" or runs[0].get("git_sha") != expected:
+    raise SystemExit("latest pipeline run is not a successful execution of the expected SHA")
+finished = runs[0].get("finished_at")
+if not finished:
+    raise SystemExit("latest successful run has no completion timestamp")
+finished_at = dt.datetime.fromisoformat(finished.replace("Z", "+00:00"))
+if finished_at.tzinfo is None:
+    finished_at = finished_at.replace(tzinfo=dt.timezone.utc)
+age = dt.datetime.now(dt.timezone.utc) - finished_at.astimezone(dt.timezone.utc)
+if age < dt.timedelta(minutes=-5) or age > dt.timedelta(hours=48):
+    raise SystemExit(f"latest run timestamp is outside the readiness window ({age.total_seconds() / 3600:.1f}h)")
+counts = runs[0].get("counts") or {}
+if not isinstance(counts, dict) or int(counts.get("predictions") or 0) <= 0:
+    raise SystemExit("latest run has no persisted predictions")
+if int(overview.get("tracked") or 0) <= 0 or not models or not agents:
+    raise SystemExit("overview, model history, or agent history is not populated")
+print(f"share-ready: {base} at {expected}, latest run age {age.total_seconds() / 3600:.1f}h")
+PY
+```
+
+If this check fails, do **not** present the live URL as the primary demo. Use the durable README screenshot and the
+dated [sample report](sample-report.md), clearly labeled as captured evidence. If the image/SHA is stale, deploy the
+exact remote `main` commit through `./scripts/deploy.sh`. If the release is current but data is stale or empty,
+refresh it with:
+
+```bash
+gcloud run jobs execute oss-radar-pipeline \
+  --project="$project" --region="$region" --wait
+```
+
+Re-run the gate after the job finishes. A dashboard that returns 200 but has stale or empty evidence is not
+share-ready.
+
+## 6. Rollback
 
 Dashboard rollback changes traffic only; it does not rebuild an image:
 
@@ -181,7 +258,7 @@ gcloud run jobs update oss-radar-pipeline \
 
 Record why the rollback occurred and preserve the failing SHA. Do not retag `latest` and call that provenance.
 
-## 6. Routine checks
+## 7. Routine checks
 
 - Daily: latest pipeline run succeeded; prediction count matches the configured watchlist count; source coverage
   and drift are plausible.

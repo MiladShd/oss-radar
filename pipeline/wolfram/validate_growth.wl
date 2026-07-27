@@ -345,7 +345,11 @@ mdHeader = StringJoin[
   "**Verdict:** ", ToString[nPass], "/", ToString[Length[detChecks]],
   " deterministic checks reproduced. The retired historical **0.740** headline is not this\n",
   "controlled ablation; the harness reproduces centered-MA **0.702 -> 0.582 causal -> 0.363 package-disjoint**.\n\n---\n\n"];
-Export[FileNameJoin[{outDir, "validation_steps.md"}], mdHeader <> StringRiffle[$md, "\n"], "Text"];
+Export[
+  FileNameJoin[{outDir, "validation_steps.md"}],
+  StringTrim[mdHeader <> StringRiffle[$md, "\n"]] <> "\n",
+  "Text"
+];
 
 Print["   wrote: validation_steps.md, wolfram_crosscheck.json, wolfram_freshness.json -> ", outDir];
 Print[""];

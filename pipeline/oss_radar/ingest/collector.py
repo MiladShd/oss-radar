@@ -61,11 +61,16 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "pypi_downloads": dl.get("_ok", False),
         "pypi_metadata": md.get("_ok", False),
         "ecosystems_pkg": eco_pkg.get("_ok", False),
-        "ecosystems_repo": eco_repo.get("_ok", False),
         "depsdev": deps.get("_ok", False),
         "osv": osv_d.get("_ok", False),
-        "github": gh_d.get("_ok", False),
     }
+    if owner:
+        # Repository providers are not attempted when no repository can be resolved.
+        # Omitting them keeps source-health rates about availability, not watchlist coverage.
+        source_status.update({
+            "ecosystems_repo": eco_repo.get("_ok", False),
+            "github": gh_d.get("_ok", False),
+        })
 
     snapshot = {
         "run_id": run_id,

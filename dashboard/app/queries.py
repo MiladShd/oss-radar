@@ -12,10 +12,12 @@ import numpy as np
 import pandas as pd
 
 from oss_radar.config import get_settings
+from oss_radar.source_health import github_recovery_guidance
 from oss_radar.warehouse import get_warehouse
 
 _PACKAGE_NAME = re.compile(r"[A-Za-z0-9_.\-]{1,80}\Z")
 _wh_cache = None
+_SOURCE_HEALTH_THRESHOLD = 0.7
 
 
 def _wh():
@@ -37,6 +39,19 @@ def _warehouse_label(wh) -> str:
     project = getattr(wh, "project", "")
     dataset = getattr(wh, "dataset", "")
     return f"{project}.{dataset}".strip(".") or "configured warehouse"
+
+
+def active_warehouse_label() -> str:
+    """Identify the configured warehouse without requiring a successful query."""
+    if _wh_cache is not None:
+        return _warehouse_label(_wh_cache)
+    settings = get_settings()
+    if settings.backend == "bigquery":
+        return (
+            f"{settings.gcp_project}.{settings.bq_dataset}".strip(".")
+            or "configured warehouse"
+        )
+    return str(settings.duckdb_path)
 
 
 def _clean(obj):
@@ -130,6 +145,55 @@ def _age_hours(value) -> float | None:
         return None
 
 
+def _source_health(wh) -> list[dict]:
+    """Return latest-run source success rates while preserving dashboard availability."""
+    try:
+        frame = wh.query_df(
+            "SELECT source_status FROM snapshots WHERE run_id = "
+            "(SELECT run_id FROM snapshots "
+            "ORDER BY snapshot_date DESC, ingested_at DESC LIMIT 1)"
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    per_source: dict[str, list[int]] = {}
+    for raw in frame.get("source_status", pd.Series(dtype=object)).dropna():
+        status = _json_obj(raw)
+        for source, ok in status.items():
+            per_source.setdefault(source, []).append(1 if ok else 0)
+
+    is_cloud = bool(
+        not getattr(wh, "path", None)
+        and (
+            getattr(wh, "project", None)
+            or getattr(get_settings(), "is_cloud", False)
+        )
+    )
+    github_hint = github_recovery_guidance(is_cloud=is_cloud)
+    rows = []
+    for source, observations in sorted(per_source.items()):
+        if not observations:
+            continue
+        rate = round(sum(observations) / len(observations), 3)
+        status = (
+            "down"
+            if rate == 0
+            else "degraded"
+            if rate < _SOURCE_HEALTH_THRESHOLD
+            else "healthy"
+        )
+        rows.append({
+            "source": source,
+            "success_rate": rate,
+            "status": status,
+            "guidance": (
+                github_hint
+                if source == "github" and rate < _SOURCE_HEALTH_THRESHOLD
+                else ""
+            ),
+        })
+    return rows
+
+
 def system_health(limit: int = 30) -> dict:
     """Run-level health summary for the dashboard system page."""
     wh = _wh()
@@ -138,6 +202,8 @@ def system_health(limit: int = 30) -> dict:
     except Exception:  # noqa: BLE001
         return {
             "data_state": "error",
+            "warehouse": active_warehouse_label(),
+            "setup_command": "make demo",
             "status": "unknown",
             "headline": "pipeline-run warehouse query failed",
             "run_days": 0,
@@ -151,6 +217,8 @@ def system_health(limit: int = 30) -> dict:
     if runs_df.empty:
         return {
             "data_state": "empty",
+            "warehouse": active_warehouse_label(),
+            "setup_command": "make demo",
             "status": "unknown", "headline": "no pipeline runs recorded", "run_days": 0,
             "total_runs": 0, "error_count": 0, "warning_count": 0, "logs": [], "issues": [], "runs": [],
         }
@@ -261,6 +329,7 @@ def system_health(limit: int = 30) -> dict:
     )
     return _clean({
         "data_state": "ready",
+        "warehouse": active_warehouse_label(),
         "status": health_status,
         "headline": headline,
         "run_days": run_days,
@@ -344,6 +413,7 @@ def overview() -> dict:
             "setup_command": "make demo",
             "tracked": 0,
             "last_run": last_run,
+            "source_health": _source_health(wh),
             "movers": [],
             "risks": [],
             "categories": {},
@@ -360,6 +430,7 @@ def overview() -> dict:
         "high_risk": int((preds["risk_level"] == "high").sum()),
         "rising": int((preds["momentum_label"] == "high").sum()),
         "last_run": last_run,
+        "source_health": _source_health(wh),
         "movers": _df_records(movers),
         "risks": _df_records(risks),
         "categories": cats,

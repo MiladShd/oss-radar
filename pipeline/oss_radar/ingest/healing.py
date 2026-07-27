@@ -33,6 +33,7 @@ def _carry_forward(wh, run_id: str, names: list[str], snapshots: list[dict],
     healed = 0
     now = datetime.now(UTC)
     for name in names:
+        attempt = snapshots[idx[name]]
         try:
             prev = wh.query_df(
                 "SELECT * FROM snapshots WHERE name = ? AND downloads_7d IS NOT NULL "
@@ -46,7 +47,10 @@ def _carry_forward(wh, run_id: str, names: list[str], snapshots: list[dict],
         row = prev.iloc[0].to_dict()
         row["run_id"] = run_id
         row["snapshot_date"] = now.date()
-        row["ingested_at"] = now
+        # The signal values are carried forward, but provenance belongs to this failed
+        # attempt. Reusing the previous healthy status would make an outage look healthy.
+        row["source_status"] = attempt.get("source_status")
+        row["ingested_at"] = attempt.get("ingested_at") or now
         snapshots[idx[name]] = row
         healed += 1
     return healed

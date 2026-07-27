@@ -20,7 +20,7 @@ structlog.configure(processors=[
     structlog.processors.add_log_level,
     structlog.processors.TimeStamper(fmt="iso"),
     structlog.dev.ConsoleRenderer(),
-])
+], logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
 
 log = structlog.get_logger(__name__)
 
@@ -36,15 +36,16 @@ def _run_validation(settings, out_dir: str, upload: bool, staleness_hours: float
     statistics + reproducibility dumps, upload them to GCS, and alarm if the local Wolfram
     educational report has gone stale. The numbers themselves stay fresh even if the local
     Mac (which holds the Wolfram Engine) is offline."""
-    import oss_radar
-
-    script = Path(oss_radar.__file__).resolve().parent.parent / "scripts" / "validate_growth.py"
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "VALIDATION_OUT": str(out / "validation_results.json"),
            "VALIDATION_ARTIFACT_DIR": str(out)}
-    log.info("validate.start", script=str(script), out=str(out))
-    subprocess.run([sys.executable, str(script)], env=env, check=True)
+    log.info("validate.start", module="oss_radar.validate_growth", out=str(out))
+    subprocess.run(
+        [sys.executable, "-m", "oss_radar.validate_growth"],
+        env=env,
+        check=True,
+    )
 
     present = [a for a in _VALIDATION_ARTIFACTS if (out / a).exists()]
     missing = sorted(set(_VALIDATION_ARTIFACTS) - set(present))
@@ -117,6 +118,16 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--dry-run", action="store_true", help="Skip GitHub PR/issue side effects")
     p_run.add_argument("--limit", type=int, default=None, help="Limit watchlist size (debug)")
 
+    p_smoke = sub.add_parser(
+        "smoke",
+        help="Run the bundled 3-package fixture end to end with network access denied",
+    )
+    p_smoke.add_argument(
+        "--out",
+        default=".artifacts/smoke",
+        help="artifact directory (default: .artifacts/smoke)",
+    )
+
     sub.add_parser("init-warehouse", help="Create warehouse tables")
     sub.add_parser("info", help="Print resolved configuration")
 
@@ -141,6 +152,14 @@ def main(argv: list[str] | None = None) -> int:
     p_audit.add_argument("--json", action="store_true", help="emit JSON instead of a table")
 
     args = parser.parse_args(argv)
+
+    if args.command == "smoke":
+        from oss_radar.smoke import run_offline_smoke
+
+        result = run_offline_smoke(args.out)
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
     settings = get_settings()
 
     if args.command == "info":

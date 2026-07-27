@@ -17,6 +17,7 @@ from oss_radar.config.active_features import active_download_features, active_ri
 from oss_radar.features import build_growth_scoring, build_growth_training, build_risk_frame
 from oss_radar.features.forward import choose_risk_training
 from oss_radar.ingest.collector import collect
+from oss_radar.ingest.fixture import collect_fixture
 from oss_radar.ingest.healing import heal
 from oss_radar.models.backtest import growth_backtest, risk_backtest
 from oss_radar.models.drift import compute_prediction_drift
@@ -28,6 +29,8 @@ from oss_radar.registry import ModelRegistry, evaluation_lineage_matches
 from oss_radar.warehouse import get_warehouse
 
 log = structlog.get_logger(__name__)
+
+_SOURCE_MODES = {"live", "fixture"}
 
 
 def _git_sha() -> str:
@@ -42,19 +45,32 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dict:
+def run_pipeline(
+    settings: Settings | None = None,
+    dry_run: bool = False,
+    source_mode: str = "live",
+) -> dict:
     """Execute one observable pipeline run and persist terminal failures.
 
     The inner runner records ``running`` as soon as the warehouse is available. This outer
     boundary converts every otherwise-unhandled exception into ``failed`` while preserving the
     original traceback for Cloud Run retry/error reporting.
     """
+    if source_mode not in _SOURCE_MODES:
+        raise ValueError(
+            f"unsupported pipeline source mode {source_mode!r}; expected one of {_SOURCE_MODES}"
+        )
     settings = settings or get_settings()
+    if source_mode == "fixture" and (not dry_run or settings.backend != "duckdb"):
+        raise ValueError(
+            "fixture source mode requires dry_run=True and backend='duckdb' "
+            "to prevent synthetic data from reaching external systems"
+        )
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     started = datetime.now(UTC)
     stages: dict[str, float] = {}
     try:
-        return _execute_pipeline(settings, dry_run, run_id, started, stages)
+        return _execute_pipeline(settings, dry_run, source_mode, run_id, started, stages)
     except Exception as exc:
         try:
             wh = get_warehouse(settings)
@@ -95,11 +111,18 @@ def run_pipeline(settings: Settings | None = None, dry_run: bool = False) -> dic
 def _execute_pipeline(
     settings: Settings,
     dry_run: bool,
+    source_mode: str,
     run_id: str,
     started: datetime,
     stages: dict[str, float],
 ) -> dict:
-    log.info("pipeline.start", run_id=run_id, backend=settings.backend, dry_run=dry_run)
+    log.info(
+        "pipeline.start",
+        run_id=run_id,
+        backend=settings.backend,
+        dry_run=dry_run,
+        source_mode=source_mode,
+    )
 
     wh = get_warehouse(settings)
     wh.init_schema()
@@ -117,7 +140,16 @@ def _execute_pipeline(
 
     # 1) Ingest (+ self-healing of transient failures)
     t = time.time()
-    healed = heal(collect(run_id, settings), settings, wh, run_id)
+    if source_mode == "fixture":
+        collected = collect_fixture(run_id)
+        # Fixture defects must fail deterministically. Falling through to live retry/healing
+        # would hide a broken fixture and violate the smoke command's no-network contract.
+        healed = {
+            **collected,
+            "stats": {"failed": 0, "recovered": 0, "carried_forward": 0},
+        }
+    else:
+        healed = heal(collect(run_id, settings), settings, wh, run_id)
     snapshots, history, heal_stats = healed["snapshots"], healed["history"], healed["stats"]
     usable_snapshots = sum(snapshot.get("downloads_7d") is not None for snapshot in snapshots)
     if not snapshots or usable_snapshots == 0:
@@ -421,13 +453,29 @@ def _execute_pipeline(
 
     # 5d) Dogfood: audit OSS Radar's OWN dependencies and store the result (supply-chain self-check)
     t = time.time()
-    try:
-        self_audit = audit_own_dependencies(settings, on_demand=True)
-        wh.insert_rows("self_audit", [{"run_id": run_id, "created_at": datetime.now(UTC),
-                                       "payload": self_audit}])
-        log.info("pipeline.self_audit", **self_audit.get("summary", {}))
-    except Exception as exc:  # noqa: BLE001 — never let the self-audit break the run
-        log.warning("pipeline.self_audit_failed", error=str(exc))
+    if source_mode == "fixture":
+        # The dependency audit intentionally reaches public package/OSV sources. Keep the
+        # plumbing row observable without weakening the hermetic fixture guarantee.
+        self_audit = {
+            "mode": "fixture",
+            "skipped": True,
+            "reason": "external dependency audit is available in live-source mode",
+            "summary": {"total": 0, "audited": 0},
+            "packages": [],
+        }
+        wh.insert_rows(
+            "self_audit",
+            [{"run_id": run_id, "created_at": datetime.now(UTC), "payload": self_audit}],
+        )
+        log.info("pipeline.self_audit_skipped", source_mode=source_mode)
+    else:
+        try:
+            self_audit = audit_own_dependencies(settings, on_demand=True)
+            wh.insert_rows("self_audit", [{"run_id": run_id, "created_at": datetime.now(UTC),
+                                           "payload": self_audit}])
+            log.info("pipeline.self_audit", **self_audit.get("summary", {}))
+        except Exception as exc:  # noqa: BLE001 — never let the self-audit break the run
+            log.warning("pipeline.self_audit_failed", error=str(exc))
     stages["self_audit"] = round(time.time() - t, 1)
 
     # 6) Agents
@@ -451,6 +499,7 @@ def _execute_pipeline(
         "packages": len(snapshots), "predictions": len(predictions),
         "training_rows": len(train_df), "risk_training_rows": len(risk_train),
         "download_history_rows": len(hist_df), "activities": len(crew["activities"]),
+        "source_mode": source_mode,
     }
     wh.upsert_rows("pipeline_runs", [{
         "run_id": run_id, "started_at": started, "finished_at": finished, "status": "success",

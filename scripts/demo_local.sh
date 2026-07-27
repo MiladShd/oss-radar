@@ -3,8 +3,9 @@
 #
 # Fresh clone -> visible output. Creates/uses a local venv, installs the pipeline
 # and dashboard deps, runs a small dry-run of the full pipeline into a local
-# DuckDB warehouse (no cloud, no side effects), then tells you exactly how to
-# view the result. Works with no cloud credentials and no Anthropic key.
+# DuckDB warehouse (no cloud writes or GitHub mutations), writes local demo
+# artifacts, then tells you exactly how to view them. Works with no cloud
+# credentials and no Anthropic key.
 #
 # Usage:
 #   scripts/demo_local.sh            # run the demo (8 packages, category-balanced)
@@ -30,6 +31,13 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ "${OSS_RADAR_BACKEND:-duckdb}" != "duckdb" ]; then
+  echo "refusing OSS_RADAR_BACKEND=${OSS_RADAR_BACKEND}: the demo is local-only and requires duckdb" >&2
+  echo "use 'python -m oss_radar.cli run' explicitly for a configured external backend" >&2
+  exit 2
+fi
+export OSS_RADAR_BACKEND=duckdb
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -70,7 +78,6 @@ if [ -z "${OSS_RADAR_GITHUB_TOKEN:-}" ]; then
 fi
 
 # --- 4) run the pipeline into a predictable local warehouse ------------------
-export OSS_RADAR_BACKEND="${OSS_RADAR_BACKEND:-duckdb}"
 export OSS_RADAR_DUCKDB_PATH="${OSS_RADAR_DUCKDB_PATH:-$REPO_ROOT/oss_radar.duckdb}"
 say "Running the pipeline (dry-run · $LIMIT category-balanced packages · DuckDB · no cloud, no PRs)"
 "$PYBIN" -m oss_radar.cli run --dry-run --limit "$LIMIT"

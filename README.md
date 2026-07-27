@@ -9,8 +9,6 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-**🔗 Live dashboard: https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app**
-
 A daily open-source intelligence pipeline that ingests downloads, GitHub activity, dependency graphs,
 vulnerabilities and security-health metrics, trains gradient-boosted models to rank **adoption momentum**
 and **dependency risk** across the Python / AI ecosystem, and uses an optional **AI-assisted operations**
@@ -21,10 +19,49 @@ layer for checks, reporting, and narrowly gated GitHub automation.
 ![OSS Radar dashboard](docs/dashboard.png)
 
 **📄 [See the pre-operationalization production baseline →](docs/sample-report.md)** — actual
-momentum/risk movers and operations activity from the 2026-07-26 deployment, explicitly annotated
+momentum/risk movers and operations activity from the 2026-07-26 production run, explicitly annotated
 where that older build used evaluation and serving behavior that this release replaces.
 
+**🔗 [Current live dashboard](https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app)** — use it as current
+portfolio evidence only after the [48-hour pre-share gate](docs/OPERATIONS.md#5-pre-share-public-dashboard-gate)
+passes. If it does not, the screenshot and dated sample report above are the durable demo.
+
 ---
+
+## Try it in five minutes
+
+With Python 3.12 and `make` available, install the local pipeline once, then run the deterministic fixture:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r pipeline/requirements.txt
+.venv/bin/pip install --no-deps -e pipeline
+make smoke
+# underlying CLI: .venv/bin/python -m oss_radar.cli smoke --out .artifacts/smoke
+```
+
+Dependency installation may contact PyPI; after that, `make smoke` blocks Python DNS/socket access and child-process
+launches while it runs. It sends a bundled three-package, 365-day fixture through ingest → features → growth
+training → scoring → agent report in local DuckDB/template-agent mode. Inspect
+`.artifacts/smoke/predictions.json` and `.artifacts/smoke/report.md`. This proves that the pipeline plumbing is
+reproducible; it does **not** prove current public-data freshness or production model quality.
+
+The separate **live-source mode** is `make demo`: it installs the local environment and calls the public providers,
+so it needs network access, can encounter rate limits, and may take longer. Run `make dashboard` afterward to open
+the resulting warehouse at <http://localhost:8099>.
+
+## What works today
+
+- [x] Deterministic offline smoke coverage for ingest, features, growth training, scoring, and reporting.
+- [x] A live-source local demo plus a version-aware dependency audit for files, package lists, or GitHub repos.
+- [x] Leak-aware model evaluation, explicit champion/challenger decisions, deterministic fallbacks, and bounded
+  operational roles whose optional LLM use is limited to report prose.
+- [x] A production-shaped GCP path with BigQuery, Cloud Run, Terraform, exact-SHA releases, canary/smoke checks,
+  rollback, and public-dashboard safeguards.
+- [x] Captured production evidence for 91 packages across six providers and seven health checks; see the dated
+  [baseline report](docs/sample-report.md) and [portfolio/interview notes](docs/PORTFOLIO.md).
+- [ ] Treat the public deployment as **current** evidence only when its SHA, health, data age, predictions, model
+  history, and agent history pass the pre-share gate.
 
 ## Why it exists
 
@@ -36,8 +73,8 @@ Picking and monitoring open-source dependencies is guesswork. OSS Radar turns it
 - **Everyone** gets the score components and scoped reasons: growth SHAP drivers and transparent
   composite-risk drivers, with any classifier contribution shown separately.
 
-It runs entirely on **free, no-auth public data sources**, so anyone can clone it and reproduce the data
-locally — and it's **deployed live on GCP**, retraining itself on a daily schedule.
+Its core inputs are **free, no-auth public data sources**, so anyone can reproduce a live-source run locally.
+The production topology schedules a daily GCP job; the fixture path above remains fully offline and deterministic.
 
 ## 🔍 Audit your own dependencies
 
@@ -140,6 +177,10 @@ exposure of its latest version. The dependency audit above sends an exact pinned
 `FastAPI` · `Cloud Run` · `Cloud Scheduler` · `Artifact Registry` · `Secret Manager` · `Terraform` ·
 `Anthropic Claude` (optional report prose) · `GitHub Actions`.
 
+The absence of Spark, Airflow, and dbt is deliberate at the current scale; the
+[architecture notes](docs/ARCHITECTURE.md#deliberate-stack-tradeoffs) document the tradeoffs and concrete adoption
+triggers.
+
 ## Operational readiness
 
 The repository now includes the pieces needed to operate the project rather than only demonstrate it:
@@ -165,10 +206,10 @@ pull-request-only ruleset bypass and provision GCP once. See [deployment](docs/D
 
 ## ▶️ Run the demo
 
-One command takes a fresh clone to visible OSS Radar output — it sets up a local
-virtualenv, installs the pipeline and dashboard, runs the full pipeline on a small
-sample into a local DuckDB warehouse (no cloud, no API keys, no side effects), and
-tells you how to view it:
+This live-source path takes a fresh clone to visible OSS Radar output: it sets up a local virtualenv, installs the
+pipeline and dashboard, and runs the full pipeline on a small sample into local DuckDB. The script refuses a
+non-DuckDB backend, so warehouse writes stay local; it makes read-only calls to public providers, while `--dry-run`
+prevents GitHub PR and issue writes:
 
 ```bash
 make demo          # or: scripts/demo_local.sh   (scripts/demo_local.sh --serve to auto-open the dashboard)
@@ -177,8 +218,31 @@ make dashboard     # then open http://localhost:8099
 
 No cloud credentials or Anthropic key required. Without a GitHub token the demo
 still runs — some GitHub-derived signals may be rate-limited (HTTP 403); run
-`gh auth login` or set `OSS_RADAR_GITHUB_TOKEN` to lift the limit. Artifacts land
-in predictable places: `oss_radar.duckdb`, `reports/<date>.md`, and `models_local/`.
+`gh auth login` or set `OSS_RADAR_GITHUB_TOKEN` to lift the limit.
+
+Local artifacts are intentionally predictable:
+
+- `.venv/` — the demo's Python environment;
+- `pipeline/oss_radar.egg-info/` — editable-install metadata;
+- `oss_radar.duckdb` and, while DuckDB is active, `oss_radar.duckdb.wal` — the live-source warehouse;
+- `models_local/` — locally trained model artifacts;
+- `mlruns/` — best-effort local MLflow traces;
+- `reports/<date>.md` — generated live-source reports; and
+- `.artifacts/smoke/` — the isolated fixture database, models, predictions, and report.
+
+To return the checkout to a pre-demo state while preserving tracked files:
+
+```bash
+# Intentionally discard generated changes under these demo-only paths.
+rm -rf .artifacts/smoke .venv pipeline/oss_radar.egg-info models_local mlruns
+rm -f oss_radar.duckdb oss_radar.duckdb.wal
+git restore --worktree -- reports/
+git clean -fX -- reports/
+```
+
+Set `OSS_RADAR_DUCKDB_PATH=/absolute/path/demo.duckdb` before `make demo` to redirect the live-source database;
+the environment, models, MLflow trace, and report paths remain repository-relative. Remove the custom database and
+its `.wal` file separately when cleaning up.
 
 ## Run it locally (manual)
 
@@ -187,8 +251,11 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r pipeline/requirements.txt -r dashboard/requirements.txt -r requirements-dev.txt
 pip install --no-deps -e pipeline
 
-# full pipeline on a small sample, local DuckDB, no cloud, no side effects:
-OSS_RADAR_GITHUB_TOKEN=$(gh auth token) python -m oss_radar.cli run --dry-run --limit 12
+# live public-source sample; force local DuckDB, and disable GitHub PR/issue writes:
+OSS_RADAR_BACKEND=duckdb \
+OSS_RADAR_DUCKDB_PATH="$PWD/oss_radar.duckdb" \
+OSS_RADAR_GITHUB_TOKEN="$(gh auth token)" \
+python -m oss_radar.cli run --dry-run --limit 12
 
 # serve the dashboard against the local warehouse:
 uvicorn dashboard.app.main:app --reload --port 8099   # → http://localhost:8099
@@ -198,6 +265,10 @@ Optional config (watchlist size, GitHub / Anthropic tokens) lives in a `.env` fi
 copy [`.env.example`](.env.example) to start. **Both tokens are optional for local runs:**
 without a GitHub token some GitHub-derived signals are reduced but the demo still runs;
 without an Anthropic key the agent crew runs in deterministic template mode.
+
+`.env` and the repository's common credential-file patterns are ignored by Git, but ignore rules are not a secret
+store: never commit keys or tokens, and add any differently named local secret file to `.gitignore` before using
+it. Prefer an interactive prompt locally and Secret Manager for deployed values.
 
 Tests & lint:
 
