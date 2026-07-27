@@ -65,6 +65,9 @@ gh api repos/MiladShd/oss-radar/rulesets/17938598 \
 Expected: active enforcement, `signatures: true`, zero bypass actors, and app-bound `analyze`, `preview`, and
 `test` checks with integration ID `15368`.
 
+Daily reports and feature proposals are committed through GitHub's `createCommitOnBranch` GraphQL mutation.
+Verify that a bot PR's head commit shows `verified: true`; the workflow does not store a private signing key.
+
 After the operationalization change itself is on `main`, dispatch the checked-in maintainer:
 
 ```bash

@@ -46,6 +46,10 @@ non-fork branch, and successful `test`, `preview`, and `analyze` checks. If an e
 uses GitHub's update-branch API and waits for all checks to rerun; it never requests an admin bypass. Feature
 proposals have an additional exact-JSON-diff and minimum-lift check.
 
+The pipeline writes bot-owned report and feature-proposal branches with GitHub's
+`createCommitOnBranch` GraphQL mutation. GitHub signs those commits, so automation satisfies
+`required_signatures` normally instead of storing a signing key or weakening the ruleset.
+
 The same workflow consolidates repeated drift incidents only when they have the exact automation title,
 `oss-radar` + `model-drift` labels, and repository-owner authorship. It preserves the oldest issue as the
 canonical audit thread, links every duplicate, and leaves all human-authored or non-matching issues untouched.

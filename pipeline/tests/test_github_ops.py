@@ -1,3 +1,5 @@
+import pytest
+
 from oss_radar.agents import github_ops
 
 
@@ -54,10 +56,6 @@ class FakeRef:
         self.edits.append(kwargs)
 
 
-class FakeFile:
-    sha = "old-file-sha"
-
-
 class FakeFileRepo:
     default_branch = "main"
 
@@ -67,8 +65,6 @@ class FakeFileRepo:
         self.branch_exists = branch_exists
         self.ref = FakeRef()
         self.created_refs = []
-        self.updated_files = []
-        self.created_files = []
         self.created_pulls = []
 
     def get_branch(self, branch):
@@ -84,17 +80,6 @@ class FakeFileRepo:
     def create_git_ref(self, **kwargs):
         self.created_refs.append(kwargs)
 
-    def get_contents(self, path, ref):
-        assert path == "pipeline/oss_radar/config/active_features.json"
-        assert ref == "oss-radar/feature-recent-share"
-        return FakeFile()
-
-    def update_file(self, *args, **kwargs):
-        self.updated_files.append((args, kwargs))
-
-    def create_file(self, *args, **kwargs):
-        self.created_files.append((args, kwargs))
-
     def get_pulls(self, state, head):
         assert state == "open"
         assert head == "owner:oss-radar/feature-recent-share"
@@ -104,6 +89,89 @@ class FakeFileRepo:
         pull = FakePull()
         self.created_pulls.append(kwargs)
         return pull
+
+
+class FakeDailyRepo(FakeFileRepo):
+    def get_git_ref(self, ref):
+        assert ref == "heads/oss-radar/daily-2026-07-27"
+        return self.ref
+
+    def get_pulls(self, state, head):
+        assert state == "open"
+        assert head == "owner:oss-radar/daily-2026-07-27"
+        return [self.pull] if self.pull else []
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+        self.raised = False
+
+    def raise_for_status(self):
+        self.raised = True
+
+    def json(self):
+        return self.payload
+
+
+def test_signed_file_commit_uses_graphql_base64_and_expected_head(monkeypatch):
+    response = FakeResponse({
+        "data": {
+            "createCommitOnBranch": {
+                "commit": {
+                    "oid": "signed-sha",
+                    "signature": {"isValid": True, "wasSignedByGitHub": True},
+                },
+            },
+        },
+    })
+    request = {}
+
+    def fake_post(url, **kwargs):
+        request["url"] = url
+        request.update(kwargs)
+        return response
+
+    monkeypatch.setattr(github_ops.requests, "post", fake_post)
+
+    oid = github_ops._signed_file_commit(
+        "secret-token",
+        "owner/repo",
+        "bot-branch",
+        "base-sha",
+        "reports/today.md",
+        "hello\n",
+        "chore: report",
+    )
+
+    assert oid == "signed-sha"
+    assert response.raised
+    assert request["url"] == "https://api.github.com/graphql"
+    assert request["timeout"] == 30
+    assert request["headers"]["Authorization"] == "Bearer secret-token"
+    assert request["json"]["variables"]["input"] == {
+        "branch": {
+            "repositoryNameWithOwner": "owner/repo",
+            "branchName": "bot-branch",
+        },
+        "expectedHeadOid": "base-sha",
+        "message": {"headline": "chore: report"},
+        "fileChanges": {
+            "additions": [{
+                "path": "reports/today.md",
+                "contents": "aGVsbG8K",
+            }],
+        },
+    }
+
+
+def test_signed_file_commit_surfaces_graphql_errors(monkeypatch):
+    response = FakeResponse({"errors": [{"message": "head changed"}]})
+    monkeypatch.setattr(github_ops.requests, "post", lambda *args, **kwargs: response)
+
+    with pytest.raises(RuntimeError, match="head changed"):
+        github_ops._signed_file_commit(
+            "token", "owner/repo", "branch", "old-sha", "file", "content", "message")
 
 
 def test_open_or_comment_issue_reuses_matching_open_issue(monkeypatch):
@@ -144,10 +212,58 @@ def test_close_open_issues_comments_and_closes(monkeypatch):
     assert [issue.state for issue in issues] == ["closed", "closed"]
 
 
+def test_open_daily_pr_resets_branch_and_writes_verified_commit(monkeypatch):
+    pull = FakePull()
+    repo = FakeDailyRepo(pull=pull)
+    commits = []
+    monkeypatch.setattr(github_ops, "_repo", lambda token, repo_full: repo)
+    monkeypatch.setattr(
+        github_ops,
+        "_signed_file_commit",
+        lambda *args: commits.append(args) or "signed-sha",
+    )
+
+    url = github_ops.open_daily_pr(
+        "token",
+        "owner/repo",
+        "oss-radar/daily-2026-07-27",
+        "reports/2026-07-27.md",
+        "# Daily report\n",
+        "OSS Radar daily brief — 2026-07-27",
+        "Automated report.",
+    )
+
+    assert url == pull.html_url
+    assert repo.ref.edits == [{"sha": "new-main-sha", "force": True}]
+    assert commits == [(
+        "token",
+        "owner/repo",
+        "oss-radar/daily-2026-07-27",
+        "new-main-sha",
+        "reports/2026-07-27.md",
+        "# Daily report\n",
+        "chore: daily report oss-radar/daily-2026-07-27",
+    )]
+    assert pull.edits == [{
+        "title": "OSS Radar daily brief — 2026-07-27",
+        "body": "Automated report.",
+        "base": "main",
+        "state": "open",
+    }]
+    assert pull.labels == ["oss-radar", "automated"]
+    assert repo.created_pulls == []
+
+
 def test_open_file_pr_refreshes_existing_branch_and_pull_request(monkeypatch):
     pull = FakePull()
     repo = FakeFileRepo(pull=pull)
+    commits = []
     monkeypatch.setattr(github_ops, "_repo", lambda token, repo_full: repo)
+    monkeypatch.setattr(
+        github_ops,
+        "_signed_file_commit",
+        lambda *args: commits.append(args) or "signed-sha",
+    )
 
     url = github_ops.open_file_pr(
         "token",
@@ -163,8 +279,15 @@ def test_open_file_pr_refreshes_existing_branch_and_pull_request(monkeypatch):
     assert url == pull.html_url
     assert repo.ref.edits == [{"sha": "new-main-sha", "force": True}]
     assert repo.created_refs == []
-    assert len(repo.updated_files) == 1
-    assert repo.updated_files[0][1]["branch"] == "oss-radar/feature-recent-share"
+    assert commits == [(
+        "token",
+        "owner/repo",
+        "oss-radar/feature-recent-share",
+        "new-main-sha",
+        "pipeline/oss_radar/config/active_features.json",
+        '{"download": ["recent_share"]}\n',
+        "feat: Enable growth feature `recent_share` (Δspearman +0.013)",
+    )]
     assert pull.edits == [{
         "title": "Enable growth feature `recent_share` (\u0394spearman +0.013)",
         "body": "fresh experiment details",
@@ -177,7 +300,13 @@ def test_open_file_pr_refreshes_existing_branch_and_pull_request(monkeypatch):
 
 def test_open_file_pr_creates_missing_branch_and_new_pull_request(monkeypatch):
     repo = FakeFileRepo(branch_exists=False)
+    commits = []
     monkeypatch.setattr(github_ops, "_repo", lambda token, repo_full: repo)
+    monkeypatch.setattr(
+        github_ops,
+        "_signed_file_commit",
+        lambda *args: commits.append(args) or "signed-sha",
+    )
 
     url = github_ops.open_file_pr(
         "token",
@@ -194,6 +323,15 @@ def test_open_file_pr_creates_missing_branch_and_new_pull_request(monkeypatch):
         "ref": "refs/heads/oss-radar/feature-recent-share",
         "sha": "new-main-sha",
     }]
+    assert commits == [(
+        "token",
+        "owner/repo",
+        "oss-radar/feature-recent-share",
+        "new-main-sha",
+        "pipeline/oss_radar/config/active_features.json",
+        '{"download": ["recent_share"]}\n',
+        "feat: Enable growth feature `recent_share` (Δspearman +0.013)",
+    )]
     assert repo.created_pulls == [{
         "title": "Enable growth feature `recent_share` (\u0394spearman +0.013)",
         "body": "experiment details",
