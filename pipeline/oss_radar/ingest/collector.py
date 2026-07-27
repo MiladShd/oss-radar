@@ -79,7 +79,7 @@ def collect_one(pkg: dict, http: HttpClient, gh: HttpClient, run_id: str) -> dic
         "category": category,
         "primary_category": primary_category,
         "capabilities": pkg.get("capabilities", []),
-        "repo": f"{owner}/{repo}" if owner else None,
+        "repo": gh_d.get("canonical_repo") or (f"{owner}/{repo}" if owner else None),
         # downloads
         "downloads_1d": dl.get("downloads_1d"),
         "downloads_7d": dl.get("downloads_7d"),

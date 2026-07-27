@@ -169,6 +169,15 @@ gcloud run jobs execute oss-radar-pipeline \
 
 Then confirm the latest `/api/runs` record is successful and reports the deployed SHA.
 
+If GitHub source health is degraded, inspect the job's connector warnings before rotating
+credentials. Repository responses can redirect after an upstream rename; the collector uses
+GitHub's returned canonical `full_name` for subsequent statistics/search calls and persists it.
+It uses GitHub's weekly-participation endpoint for four-week commit volume, avoiding the
+asynchronous `202 Accepted` cache contract of the commit-activity endpoint. Update
+`REPO_OVERRIDES` for a genuinely unresolved repository. Validate the Secret Manager token only
+when the logs show authentication or rate-limit errors, then rerun the job and verify the next
+source-health record.
+
 ## 5. Pre-share public-dashboard gate
 
 Treat the live URL as current portfolio evidence only when all of these are true:
