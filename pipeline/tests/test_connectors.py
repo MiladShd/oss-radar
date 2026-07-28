@@ -89,6 +89,52 @@ def test_pypi_metadata_discovers_repo_and_parses_release_fields():
     assert result["license_pypi"] == "Apache-2.0"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/acme/widget", ("acme", "widget")),
+        ("http://www.github.com/acme/widget/", ("acme", "widget")),
+        ("github.com/acme/widget.git", ("acme", "widget")),
+        ("git+https://github.com/acme/widget.git", ("acme", "widget")),
+        ("git+ssh://git@github.com/acme/widget.git", ("acme", "widget")),
+        ("git@github.com:acme/widget.git", ("acme", "widget")),
+        ("ssh://git@github.com/acme/widget.git", ("acme", "widget")),
+        ("https://github.com/acme/widget/tree/main", ("acme", "widget")),
+    ],
+)
+def test_pypi_metadata_parses_only_exact_github_hosts(url, expected):
+    assert pypi_metadata.parse_owner_repo(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evilgithub.com/attacker/repo",
+        "https://github.com.evil.example/attacker/repo",
+        "https://evil.example/github.com/attacker/repo",
+        "https://example.test/redirect?next=https://github.com/attacker/repo",
+        "javascript:https://github.com/attacker/repo",
+        "https://[github.com/acme/widget",
+    ],
+)
+def test_pypi_metadata_rejects_deceptive_github_urls(url):
+    info = {"project_urls": {"Source": url}}
+
+    assert pypi_metadata.parse_owner_repo(url) is None
+    assert pypi_metadata._discover_repo(info) is None
+
+
+def test_pypi_metadata_skips_deceptive_priority_url_for_valid_github_repo():
+    info = {
+        "project_urls": {
+            "Source": "https://evilgithub.com/attacker/repo",
+            "Repository": "https://github.com/acme/widget",
+        }
+    }
+
+    assert pypi_metadata._discover_repo(info) == "https://github.com/acme/widget"
+
+
 class _PostClient:
     def __init__(self, payload):
         self.payload = payload
