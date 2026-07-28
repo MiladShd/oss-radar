@@ -10,22 +10,53 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from statistics import mean
+from urllib.parse import urlparse
 
 from oss_radar.ingest.http import HttpClient
 
 BASE = "https://pypi.org/pypi"
 _REPO_KEY_PRIORITY = ("source", "repository", "source code", "code", "github", "homepage", "home")
-_OWNER_REPO = re.compile(r"github\.com/([^/]+)/([^/#?]+)", re.IGNORECASE)
+_GITHUB_HOSTS = frozenset({"github.com", "www.github.com"})
+_GITHUB_SCHEMES = frozenset({"git", "git+http", "git+https", "git+ssh", "http", "https", "ssh"})
+_SLUG_COMPONENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
+_SCP_GITHUB = re.compile(r"^(?:(?P<user>[^@\s/]+)@)?github\.com:(?P<path>.+)$", re.IGNORECASE)
 
 
 def parse_owner_repo(url: str | None) -> tuple[str, str] | None:
-    if not url:
+    """Return a GitHub ``(owner, repo)`` only for an exact GitHub hostname."""
+    if not isinstance(url, str) or not url.strip():
         return None
-    m = _OWNER_REPO.search(url)
-    if not m:
+    raw = url.strip()
+    scp_match = _SCP_GITHUB.fullmatch(raw)
+    if scp_match:
+        user = f"{scp_match.group('user')}@" if scp_match.group("user") else ""
+        raw = f"ssh://{user}github.com/{scp_match.group('path')}"
+    elif raw.startswith("//"):
+        raw = f"https:{raw}"
+    elif "://" not in raw:
+        raw = f"https://{raw}"
+
+    try:
+        parsed = urlparse(raw)
+        hostname = (parsed.hostname or "").lower()
+    except ValueError:
         return None
-    owner, repo = m.group(1), m.group(2)
-    return owner, repo.removesuffix(".git")
+    if parsed.scheme.lower() not in _GITHUB_SCHEMES:
+        return None
+    if hostname not in _GITHUB_HOSTS:
+        return None
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2:
+        return None
+    owner, repo = parts[:2]
+    if repo.lower().endswith(".git"):
+        repo = repo[:-4]
+    if not owner or not repo:
+        return None
+    if not _SLUG_COMPONENT.fullmatch(owner) or not _SLUG_COMPONENT.fullmatch(repo):
+        return None
+    return owner, repo
 
 
 def _discover_repo(info: dict) -> str | None:
@@ -35,11 +66,11 @@ def _discover_repo(info: dict) -> str | None:
     # priority keys first
     for key in _REPO_KEY_PRIORITY:
         for k, v in candidates.items():
-            if v and k.lower() == key and "github.com" in v:
+            if isinstance(v, str) and k.lower() == key and parse_owner_repo(v):
                 return v
     # any github url
     for v in candidates.values():
-        if v and "github.com" in v:
+        if isinstance(v, str) and parse_owner_repo(v):
             return v
     return None
 

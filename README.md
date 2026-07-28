@@ -22,9 +22,10 @@ layer for checks, reporting, and narrowly gated GitHub automation.
 momentum/risk movers and operations activity from the 2026-07-26 production run, explicitly annotated
 where that older build used evaluation and serving behavior that this release replaces.
 
-**🔗 [Current live dashboard](https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app)** — use it as current
-portfolio evidence only after the [48-hour pre-share gate](docs/OPERATIONS.md#5-pre-share-public-dashboard-gate)
-passes. If it does not, the screenshot and dated sample report above are the durable demo.
+**🔗 [Current live dashboard](https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app)** — the documented
+[48-hour pre-share gate](docs/OPERATIONS.md#5-pre-share-public-dashboard-gate) passed on 2026-07-27
+with an exact-SHA deployment, a fresh 91-package production run, populated model/agent history, and all
+seven source-health checks healthy. The screenshot and dated sample report above remain durable fallbacks.
 
 ---
 
@@ -60,8 +61,8 @@ the resulting warehouse at <http://localhost:8099>.
   rollback, and public-dashboard safeguards.
 - [x] Captured production evidence for 91 packages across six providers and seven health checks; see the dated
   [baseline report](docs/sample-report.md) and [portfolio/interview notes](docs/PORTFOLIO.md).
-- [ ] Treat the public deployment as **current** evidence only when its SHA, health, data age, predictions, model
-  history, and agent history pass the pre-share gate.
+- [x] The public deployment passed the pre-share gate: exact SHA, health, data freshness, predictions, model
+  history, and agent history were verified against the live production warehouse.
 
 ## Why it exists
 
