@@ -13,7 +13,8 @@
     "mom_56v56",
     "mom_28v56",
     "trend_slope_56",
-    "trend_slope_84"
+    "trend_slope_84",
+    "trend_slope_7"
   ],
   "risk": [
     "log_stars",
