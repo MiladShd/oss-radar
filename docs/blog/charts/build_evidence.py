@@ -7,6 +7,7 @@ import hashlib
 import json
 import sys
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -22,7 +23,7 @@ from oss_radar.models.survival import (  # noqa: E402
 )
 
 path = sys.argv[1]
-raw = open(path, "rb").read()
+raw = Path(path).read_bytes()
 snap = pd.read_csv(path, parse_dates=["snapshot_date", "ingested_at"])
 cp = build_counting_process(snap)
 
