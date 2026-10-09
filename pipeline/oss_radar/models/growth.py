@@ -43,6 +43,7 @@ class GrowthModel:
     importances: dict = field(default_factory=dict)
     eval_provenance: dict = field(default_factory=dict)
     conformal: dict = field(default_factory=dict)  # level (str) -> DriftAwareConformal.to_dict()
+    calibration_source: str = "own"  # "own" or "borrowed" (see adopt_calibration)
     seed: int = 42
     horizon_days: int = 70
 
@@ -114,7 +115,7 @@ class GrowthModel:
                 ((y_test_raw < _TARGET_MIN) | (y_test_raw > _TARGET_MAX)).mean()
             ),
         }
-        self._calibrate_intervals(tuning_model, validation, test)
+        self._calibrate_intervals(train, validation, test)
         imp = self.model.booster_.feature_importance(importance_type="gain")
         total = imp.sum() or 1
         self.importances = {
@@ -123,24 +124,51 @@ class GrowthModel:
         }
         return self.metrics
 
-    def _calibrate_intervals(
-        self, tuning_model: lgb.LGBMRegressor, validation: pd.DataFrame, test: pd.DataFrame
-    ) -> None:
-        """Calibrate drift-aware conformal intervals on genuinely out-of-sample residuals.
+    def calibration_residuals(
+        self, train: pd.DataFrame, validation: pd.DataFrame, test: pd.DataFrame
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Absolute residuals on the validation + test origins, and their date index (0 = oldest).
 
-        The train-only tuning model never saw the validation or test origins, so its absolute residuals
-        there are valid calibration scores; they are applied to the deployed (train+validation) model,
-        which can only be slightly better. Point-forecast test metrics above are unaffected.
+        The model that produces them is fitted on ``train`` only, and its iteration count is chosen by
+        early stopping on the *last few training dates*, never on the validation or test labels. The
+        residuals are therefore genuinely out of sample: no label from a scored date influenced the
+        fitted model, directly or through the stopping rule.
+        """
+        dates = pd.to_datetime(train["feature_date"]).dt.normalize()
+        ordered = sorted(dates.unique())
+        n_inner = max(2, math.ceil(len(ordered) * 0.2))
+        inner_dates = set(ordered[-n_inner:])
+        is_inner = dates.isin(inner_dates).to_numpy()
+        fit_part, stop_part = train.loc[~is_inner], train.loc[is_inner]
+        clip = lambda y: y.astype(float).clip(_TARGET_MIN, _TARGET_MAX)  # noqa: E731
+        model = self._new_model(_MAX_ESTIMATORS)
+        model.fit(
+            fit_part[self.features].astype(float), clip(fit_part[GROWTH_TARGET_COLUMN]),
+            eval_set=[(stop_part[self.features].astype(float), clip(stop_part[GROWTH_TARGET_COLUMN]))],
+            eval_metric="l1",
+            callbacks=[lgb.early_stopping(40, verbose=False), lgb.log_evaluation(0)],
+        )
+        pool = pd.concat([validation, test], ignore_index=True)
+        date_index = pd.factorize(pd.to_datetime(pool["feature_date"]).dt.normalize(), sort=True)[0]
+        actual = pool[GROWTH_TARGET_COLUMN].astype(float).to_numpy()
+        predicted = model.predict(pool[self.features].astype(float))
+        return np.abs(actual - predicted), date_index
+
+    def _calibrate_intervals(
+        self, train: pd.DataFrame, validation: pd.DataFrame, test: pd.DataFrame
+    ) -> None:
+        """Calibrate drift-aware conformal intervals on out-of-sample residuals.
+
+        See :meth:`calibration_residuals`. The residuals describe a model fitted on the training dates
+        only; the deployed model is refit on train + validation, so the intervals are an *estimate* of
+        its error scale, not a measured coverage of the deployed forecaster. Point-forecast test metrics
+        are unaffected.
         """
         self.conformal = {}
-        pool = pd.concat([validation, test], ignore_index=True)
-        dates = pd.to_datetime(pool["feature_date"]).dt.normalize()
-        date_index = pd.factorize(dates, sort=True)[0]
+        self.calibration_source = "own"
+        residuals, date_index = self.calibration_residuals(train, validation, test)
         if date_index.max() + 1 <= _CONFORMAL_WARMUP_DATES:
             return
-        actual = pool[GROWTH_TARGET_COLUMN].astype(float).to_numpy()
-        predicted = tuning_model.predict(pool[self.features].astype(float))
-        residuals = np.abs(actual - predicted)
         for level in INTERVAL_LEVELS:
             calibrator, evidence = DriftAwareConformal.calibrate(
                 residuals, date_index, alpha=round(1 - level, 4),
@@ -154,6 +182,24 @@ class GrowthModel:
         self.metrics["conformal_n_dates_scored"] = float(evidence.n_dates_scored)
         self.metrics["conformal_n_calibration"] = float(len(residuals))
 
+    def adopt_calibration(self, other: GrowthModel) -> bool:
+        """Borrow ``other``'s conformal calibration when this model has none (in memory only).
+
+        A retrained challenger is calibrated on out-of-sample residuals, but the validation gate may hold
+        it back while an older champion keeps serving. That champion's own residuals on today's
+        calibration dates are in-sample, so they cannot be used. Borrowing is only allowed between models
+        with the same features and horizon, and the provenance is recorded in ``calibration_source`` so
+        predictions can say where their interval came from. It is an approximation, not a measured
+        coverage for this model; the borrowed state is never persisted.
+        """
+        if self.conformal or not other.conformal or other is self:
+            return False
+        if list(self.features) != list(other.features) or self.horizon_days != other.horizon_days:
+            return False
+        self.conformal = {level: dict(blob) for level, blob in other.conformal.items()}
+        self.calibration_source = "borrowed"
+        return True
+
     def predict_interval(
         self, df: pd.DataFrame, level: float = 0.8
     ) -> tuple[np.ndarray, np.ndarray] | None:
@@ -161,7 +207,16 @@ class GrowthModel:
         blob = self.conformal.get(str(level))
         if self.model is None or not blob:
             return None
-        return DriftAwareConformal.from_dict(blob).interval(self.predict(df))
+        half = DriftAwareConformal.from_dict(blob).half_width()
+        # Levels are calibrated independently, so their adaptive states can cross; enforce nesting so a
+        # 90% interval is never narrower than an 80% one.
+        for other_level, other_blob in self.conformal.items():
+            if float(other_level) < level:
+                half = max(half, DriftAwareConformal.from_dict(other_blob).half_width())
+        if not math.isfinite(half):
+            return None  # the calibration set cannot support this level
+        point = self.predict(df)
+        return point - half, point + half
 
     def _new_model(self, n_estimators: int) -> lgb.LGBMRegressor:
         return lgb.LGBMRegressor(

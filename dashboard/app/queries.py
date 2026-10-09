@@ -447,7 +447,7 @@ def all_packages() -> list[dict]:
         "name", "category", "primary_category", "capabilities", "github_topics",
         "primary_language", "repo", "momentum_score", "risk_score", "growth_pred_70d",
         "growth_pred_lo_70d", "growth_pred_hi_70d", "momentum_score_lo", "momentum_score_hi",
-        "interval_level", "risk_composite_score", "risk_classifier_probability",
+        "interval_level", "p_new_advisory_14d", "p_new_advisory_30d", "risk_composite_score", "risk_classifier_probability",
         "momentum_label", "risk_level", "momentum_reasons", "risk_reasons", "top_reasons",
         "stars", "monthly_downloads",
         "dependent_repos_count", "vuln_count", "scorecard_overall",

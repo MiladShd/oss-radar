@@ -84,4 +84,6 @@ jobs:
       - name: Install Chromium for browser tests
         run: python -m playwright install --with-deps chromium
       - name: Test dashboard
+        env:
+          REQUIRE_BROWSER_TESTS: "1"
         run: pytest dashboard/tests -q

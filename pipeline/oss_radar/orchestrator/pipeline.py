@@ -24,6 +24,7 @@ from oss_radar.models.drift import compute_prediction_drift
 from oss_radar.models.growth import GrowthModel
 from oss_radar.models.risk import RiskModel
 from oss_radar.models.scoring import build_predictions
+from oss_radar.models.survival import score_new_advisory_risk
 from oss_radar.models.validation_gate import GateResult, growth_gate
 from oss_radar.registry import ModelRegistry, evaluation_lineage_matches
 from oss_radar.warehouse import get_warehouse
@@ -359,6 +360,16 @@ def _execute_pipeline(
     model_metrics["risk"]["serving"] = _serving_note("risk", risk_ver)
     model_metrics["growth"]["served_version"] = growth_ver
     model_metrics["risk"]["served_version"] = risk_ver
+    # An older champion may serve while a freshly calibrated challenger is held by the gate; let it
+    # borrow the challenger's out-of-sample error scale so intervals do not vanish (not persisted).
+    if (
+        serving_growth is not None
+        and serving_growth is not growth
+        and growth.model is not None
+        and serving_growth.adopt_calibration(growth)
+    ):
+        log.info("pipeline.interval_calibration_borrowed", serving=growth_ver,
+                 coverage_80=growth.metrics.get("conformal_coverage_80"))
     if serving_growth is not None:
         current_incumbent_metric = matched_comparisons.get("growth", {}).get(
             "incumbent_metric"
@@ -408,11 +419,26 @@ def _execute_pipeline(
         log.info("pipeline.challenger_held", model="risk", serving=risk_ver)
 
     t = time.time()
+    # Survival view of dependency risk (time to the next advisory). Informational: it never feeds
+    # risk_score, and any failure here must not stop the daily run.
+    survival_scores = None
+    try:
+        survival = score_new_advisory_risk(snap_history)
+        if survival is not None:
+            survival_scores, survival_info = survival
+            log.info("pipeline.survival", **{k: v for k, v in survival_info.items()
+                                             if k != "hazard_ratios_per_sd"},
+                     hazard_ratios=survival_info["hazard_ratios_per_sd"])
+        else:
+            log.info("pipeline.survival_skipped", reason="insufficient advisory history")
+    except Exception as exc:  # noqa: BLE001 - optional enrichment must not break the run
+        log.warning("pipeline.survival_failed", error=str(exc))
     if not score_df.empty:
         predictions = build_predictions(run_id, score_df, snap_df, risk_df,
                                         serving_growth, serving_risk,
                                         growth_model_version=growth_ver,
-                                        risk_model_version=risk_ver)
+                                        risk_model_version=risk_ver,
+                                        survival_scores=survival_scores)
     else:
         predictions = pd.DataFrame()
     stages["score"] = round(time.time() - t, 1)
