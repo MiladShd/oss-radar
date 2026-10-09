@@ -197,8 +197,6 @@ def _source_health(wh) -> list[dict]:
 
 def _agent_name(raw) -> str:
     """'DataScientist' -> 'Data Scientist'."""
-    import re
-
     return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(raw or "Agent"))
 
 

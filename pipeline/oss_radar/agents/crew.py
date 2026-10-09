@@ -162,21 +162,24 @@ def _data_quality(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
     return {"coverage": coverage, "duplicates": dupes, "null_rates": null_rates}
 
 
+def _is_number(value) -> bool:
+    """True for a real, non-NaN number (bools excluded)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isnan(value)
+
+
 # --- Data Scientist: training + champion/challenger + drift monitoring ---
 def _data_scientist(ctx: AgentContext, model_metrics: dict) -> None:
     for name, m in model_metrics.items():
         primary = "spearman" if name == "growth" else "auc"
         val = m.get(primary)
         label = metric_label(primary)
-        val_str = f"{label} {val:.3f}" if isinstance(val, (int, float)) and val == val else f"{label} unavailable"
+        val_str = f"{label} {val:.3f}" if _is_number(val) else f"{label} unavailable"
         note = m.get("promotion_note") or (
             "Promoted: it is now the champion." if m.get("is_champion") else "Kept as challenger."
         )
         n_train = m.get("n_train") or m.get("n_samples")
         serving_metric = m.get(f"serving_{primary}")
-        serving_value = (f" ({label} {serving_metric:.3f})"
-                         if isinstance(serving_metric, (int, float)) and serving_metric == serving_metric
-                         else "")
+        serving_value = f" ({label} {serving_metric:.3f})" if _is_number(serving_metric) else ""
         labels = (f" Training labels: {label_mode(m['label_mode'])}."
                   if name == "risk" and m.get("label_mode") else "")
         ctx.record(
