@@ -394,6 +394,9 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>n==null?"—":Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(n);
 const pct=n=>n==null?"—":(n>=0?"+":"")+(n*100).toFixed(1)+"%";
 const logPct=n=>n==null?"—":pct(Math.expm1(Number(n)));
+/* Survival model (docs/SURVIVAL.md): chance of a new security advisory soon, or "" when not scored. */
+const advisoryTxt=p=>p.p_new_advisory_30d==null?"":
+  `new advisory: ${Math.round(p.p_new_advisory_14d*100)}% in 14d · ${Math.round(p.p_new_advisory_30d*100)}% in 30d`;
 /* Drift-aware conformal interval (docs/CONFORMAL.md): "80% range −3% to +14%", or "" when not calibrated. */
 const rangeTxt=p=>(p.growth_pred_lo_70d==null||p.growth_pred_hi_70d==null)?"":
   `${Math.round((p.interval_level||0.8)*100)}% range ${logPct(p.growth_pred_lo_70d)} to ${logPct(p.growth_pred_hi_70d)}`;
@@ -574,7 +577,8 @@ async function openDrawer(name){
           p.risk_classifier_probability==null
             ? "weighted composite with categorical safety floors"
             : `60% composite (${Math.round(p.risk_composite_score||0)}) + 40% calibrated classifier (${Math.round(p.risk_classifier_probability*100)}), then categorical safety floors`
-        }</div></div>
+        }</div>
+        <div class="mono" data-testid="advisory" style="font-size:12px;color:var(--muted)">${advisoryTxt(p)}</div></div>
     </div>
     <div class="lab mono" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:4px">Daily downloads (180d)</div>
     ${sparkline(d.downloads,"var(--teal)")||"<div class='mono' style='color:var(--faint);font-size:12px'>no series</div>"}

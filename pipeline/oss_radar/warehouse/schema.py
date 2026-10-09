@@ -128,6 +128,8 @@ PREDICTIONS: list[Column] = [
     ("momentum_score_lo", "FLOAT"),
     ("momentum_score_hi", "FLOAT"),
     ("interval_level", "FLOAT"),
+    ("p_new_advisory_14d", "FLOAT"),
+    ("p_new_advisory_30d", "FLOAT"),
     ("momentum_label", "STRING"),
     ("risk_level", "STRING"),
     ("momentum_reasons", "JSON"),

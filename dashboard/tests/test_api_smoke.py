@@ -42,6 +42,7 @@ def _seed(path: str) -> DuckDBWarehouse:
          "momentum_score": 88.0, "risk_score": 21.0, "growth_pred_70d": 0.12,
          "growth_pred_lo_70d": -0.05, "growth_pred_hi_70d": 0.30,
          "momentum_score_lo": 46.0, "momentum_score_hi": 95.0, "interval_level": 0.8,
+         "p_new_advisory_14d": 0.12, "p_new_advisory_30d": 0.25,
          "momentum_label": "high", "risk_level": "low",
          "momentum_reasons": ["downloads accelerating"],
          "risk_reasons": ["active maintenance"],
@@ -131,6 +132,14 @@ def test_packages_api_exposes_conformal_interval(client):
     assert rows["vllm"]["interval_level"] == pytest.approx(0.8)
     assert rows["vllm"]["growth_pred_lo_70d"] < rows["vllm"]["growth_pred_70d"] < rows["vllm"]["growth_pred_hi_70d"]
     assert rows["langchain"].get("growth_pred_lo_70d") is None  # uncalibrated rows stay null
+
+
+def test_packages_api_exposes_survival_probabilities(client):
+    rows = {r["name"]: r for r in client.get("/api/packages").json()}
+    assert rows["vllm"]["p_new_advisory_14d"] == pytest.approx(0.12)
+    assert rows["vllm"]["p_new_advisory_30d"] == pytest.approx(0.25)
+    assert rows["vllm"]["p_new_advisory_14d"] <= rows["vllm"]["p_new_advisory_30d"]
+    assert rows["langchain"].get("p_new_advisory_30d") is None  # not scored -> null, never 0
 
 
 def test_health(client, monkeypatch):

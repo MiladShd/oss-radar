@@ -131,6 +131,15 @@ the composite.
 - The day-1 label is a heuristic rule. As daily `snapshots` accumulate, the pipeline automatically relabels
   against *realized forward outcomes* (did risk escalate?) and switches once there are enough rows.
 
+### Survival view of risk: time to the next advisory
+
+Alongside the classifier, a Cox proportional-hazards model (implemented in NumPy and verified against an
+equivalent Poisson regression to 1e-14) estimates the chance each package gets a new security advisory within 14
+and 30 days. It is better **calibrated** than a fixed-horizon classifier (Brier 0.061 vs 0.112 at 14 days) because a
+calendar-time baseline hazard absorbs bulk-publication shocks. It does **not** rank better than advisory history
+alone, and its outcome is advisory disclosure, not exploitability. Shown beside, never inside, `risk_score`.
+Details, math and caveats: [SURVIVAL.md](SURVIVAL.md).
+
 ## Champion / challenger
 
 Each successfully trained candidate is recorded. For growth, the incumbent artifact is re-scored on the

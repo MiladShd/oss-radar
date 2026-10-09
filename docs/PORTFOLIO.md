@@ -75,6 +75,13 @@ non-overlapping production cohorts.
 > shipped 80% prediction intervals to every package on the dashboard, and documented the derivation and the
 > limits in [CONFORMAL.md](CONFORMAL.md).
 
+> Replaced a fixed-horizon risk label with survival analysis: implemented a Cox proportional-hazards model with
+> time-varying covariates, Breslow baseline hazard, and package-clustered robust errors from scratch in NumPy,
+> verified it against brute-force likelihood loops and an exact Poisson-regression identity (coefficients agree to
+> 1e-14), and evaluated it with temporal landmark forecasts: calibrated 14-day advisory probabilities (Brier 0.061
+> vs 0.112 for a same-covariate logistic classifier, which scored worse than the base rate), while reporting
+> honestly that advisory history alone ranks slightly better (AUC 0.85 vs 0.82).
+
 > Built a 198-test automated suite (22 headless-Chromium Playwright tests plus API, statistical, and pipeline
 > tests) that drives the live dashboard against a seeded warehouse: every tab, search/sort/category filters, the
 > package drawer, the dependency-audit form, conformal intervals reaching the UI, graceful no-interval states, and
@@ -134,3 +141,11 @@ production operations, failure containment, and evidence-backed limits.
 - **How do you know the website works?** Unit and statistical tests cover the math; API tests cover the JSON
   contracts; Playwright browser tests cover what a visitor does. They run on every pull request, and the
   browser tests skip (rather than flake) when the CDN or Chromium is unavailable.
+- **Why survival analysis instead of a classifier?** A classifier needs a fixed horizon and throws away timing and
+  partial follow-up. The Cox model uses every day of exposure, handles censoring, and its calendar-time baseline
+  separates "everyone got advisories on July 8" from "this package is riskier". That is why its probabilities are
+  calibrated while a logistic model on the same inputs forecast 22% against 8% observed.
+- **What did the survival model teach you that you did not expect?** Days since last release had a hazard ratio of
+  0.75, so recently released packages gain advisories faster, the opposite of treating staleness as risk. I
+  reported it as a disclosure effect (active projects attract scrutiny), not as safety, and noted the model
+  predicts advisory arrival, not exploitability.

@@ -1,0 +1,604 @@
+{
+  "config": {
+    "n_packages": 91,
+    "n_days": 110,
+    "n_rows": 10010,
+    "n_events": 167,
+    "n_event_days": 45,
+    "features": [
+      "log_vuln_history",
+      "log_vuln_recent_28d",
+      "log_downloads",
+      "log_days_since_release",
+      "scorecard",
+      "bus_factor"
+    ],
+    "ties": "breslow",
+    "ridge_l2": 0.001,
+    "event": "vuln_count increased vs the previous daily snapshot (new advisory)",
+    "note": "covariates are the previous day's snapshot; calendar-time baseline hazard"
+  },
+  "full_sample_hazard_ratios": [
+    {
+      "feature": "log_vuln_history",
+      "coef_per_sd": 0.873294,
+      "hazard_ratio_per_sd": 2.394785,
+      "hr_ci_low": 1.854148,
+      "hr_ci_high": 3.093063,
+      "robust_se": 0.130545,
+      "z": 6.689591,
+      "p_value": 0.0
+    },
+    {
+      "feature": "log_vuln_recent_28d",
+      "coef_per_sd": 0.198262,
+      "hazard_ratio_per_sd": 1.219281,
+      "hr_ci_low": 1.050019,
+      "hr_ci_high": 1.415828,
+      "robust_se": 0.076251,
+      "z": 2.600101,
+      "p_value": 0.00932
+    },
+    {
+      "feature": "log_downloads",
+      "coef_per_sd": -0.075022,
+      "hazard_ratio_per_sd": 0.927723,
+      "hr_ci_low": 0.787389,
+      "hr_ci_high": 1.093069,
+      "robust_se": 0.083679,
+      "z": -0.896541,
+      "p_value": 0.369964
+    },
+    {
+      "feature": "log_days_since_release",
+      "coef_per_sd": -0.283296,
+      "hazard_ratio_per_sd": 0.753297,
+      "hr_ci_low": 0.606812,
+      "hr_ci_high": 0.935143,
+      "robust_se": 0.110327,
+      "z": -2.567793,
+      "p_value": 0.010235
+    },
+    {
+      "feature": "scorecard",
+      "coef_per_sd": -0.099174,
+      "hazard_ratio_per_sd": 0.905585,
+      "hr_ci_low": 0.69252,
+      "hr_ci_high": 1.184204,
+      "robust_se": 0.13686,
+      "z": -0.724642,
+      "p_value": 0.468672
+    },
+    {
+      "feature": "bus_factor",
+      "coef_per_sd": 0.059102,
+      "hazard_ratio_per_sd": 1.060884,
+      "hr_ci_low": 0.778266,
+      "hr_ci_high": 1.446131,
+      "robust_se": 0.158056,
+      "z": 0.373934,
+      "p_value": 0.708454
+    }
+  ],
+  "likelihood_ratio_chi2": 276.0719528299376,
+  "proportional_hazards_check": {
+    "log_vuln_history": {
+      "spearman_rho": 0.19301712779973648,
+      "p_value": 0.2039607845375384,
+      "n_event_days": 45
+    },
+    "log_vuln_recent_28d": {
+      "spearman_rho": 0.2881422924901185,
+      "p_value": 0.05492690196897881,
+      "n_event_days": 45
+    },
+    "log_downloads": {
+      "spearman_rho": -0.015415019762845848,
+      "p_value": 0.9199449277026844,
+      "n_event_days": 45
+    },
+    "log_days_since_release": {
+      "spearman_rho": -0.04980237154150198,
+      "p_value": 0.7452681377898741,
+      "n_event_days": 45
+    },
+    "scorecard": {
+      "spearman_rho": 0.017127799736495388,
+      "p_value": 0.9110837488701798,
+      "n_event_days": 45
+    },
+    "bus_factor": {
+      "spearman_rho": -0.08445322793148878,
+      "p_value": 0.5812401024536715,
+      "n_event_days": 45
+    }
+  },
+  "landmark_evaluation": [
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.8297405189620759,
+      "brier": 0.05997172005383237,
+      "mean_predicted": 0.06614173261325516,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.8107784431137725,
+      "brier": 0.06103019333850806,
+      "mean_predicted": 0.061991681600032926,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.7901530272787758,
+      "brier": 0.1674012629931889,
+      "mean_predicted": 0.2933063027242664,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.6637170104235972,
+      "brier": null,
+      "mean_predicted": 21.415201465201463,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.8528942115768463,
+      "brier": null,
+      "mean_predicted": 1.399892670858581,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 14,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.0871301261525404,
+      "mean_predicted": 0.1896798853320592,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 546,
+      "n_positive": 45,
+      "n_landmarks": 6
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.7912574016022292,
+      "brier": 0.08418433554923982,
+      "mean_predicted": 0.1168921106928984,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.7732497387669801,
+      "brier": 0.08665697870585802,
+      "mean_predicted": 0.10955730617128569,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.7694879832810867,
+      "brier": 0.21959803479407594,
+      "mean_predicted": 0.3741546862853288,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.6456983629397423,
+      "brier": null,
+      "mean_predicted": 20.511538461538464,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.828944618599791,
+      "brier": null,
+      "mean_predicted": 1.391479264308821,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 60,
+      "horizon_days": 28,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.13677311484875018,
+      "mean_predicted": 0.292239010989011,
+      "observed_rate": 0.12362637362637363,
+      "n_rows": 364,
+      "n_positive": 45,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.8217564870259481,
+      "brier": 0.06100523260119593,
+      "mean_predicted": 0.06590087337333117,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.8093812375249501,
+      "brier": 0.06136337963972442,
+      "mean_predicted": 0.06582223527223219,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.7887225548902196,
+      "brier": 0.11193664823663198,
+      "mean_predicted": 0.22364002198788777,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.670059880239521,
+      "brier": null,
+      "mean_predicted": 21.52087912087912,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.8473053892215568,
+      "brier": null,
+      "mean_predicted": 1.4049824422704684,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 14,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.0825475824915161,
+      "mean_predicted": 0.16562009419152274,
+      "observed_rate": 0.08241758241758242,
+      "n_rows": 364,
+      "n_positive": 30,
+      "n_landmarks": 4
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.7817883511074651,
+      "brier": 0.08757835040939246,
+      "mean_predicted": 0.11735941800085892,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.7653814602132896,
+      "brier": 0.08933887172241259,
+      "mean_predicted": 0.11647407815276177,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.7637407711238721,
+      "brier": 0.19195589829948273,
+      "mean_predicted": 0.3363064685888781,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.6428766748701121,
+      "brier": null,
+      "mean_predicted": 20.08516483516484,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.8193874760732841,
+      "brier": null,
+      "mean_predicted": 1.3935687000335106,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 70,
+      "horizon_days": 28,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.12341675792000978,
+      "mean_predicted": 0.2404500261643118,
+      "observed_rate": 0.12637362637362637,
+      "n_rows": 182,
+      "n_positive": 23,
+      "n_landmarks": 2
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.8405139833711263,
+      "brier": 0.05394188457528763,
+      "mean_predicted": 0.0732089489321685,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.8221844293272865,
+      "brier": 0.05345476929184133,
+      "mean_predicted": 0.07621757550678673,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.8151927437641724,
+      "brier": 0.07483971290778886,
+      "mean_predicted": 0.1735127658266996,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.6293461829176115,
+      "brier": null,
+      "mean_predicted": 22.146520146520146,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.8538359788359788,
+      "brier": null,
+      "mean_predicted": 1.4091978952319555,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 14,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.07625167040751456,
+      "mean_predicted": 0.14935064935064932,
+      "observed_rate": 0.07692307692307693,
+      "n_rows": 273,
+      "n_positive": 21,
+      "n_landmarks": 3
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "cox_selected",
+      "features": [
+        "log_vuln_history",
+        "log_days_since_release"
+      ],
+      "auc": 0.7894248608534323,
+      "brier": 0.0975534102708951,
+      "mean_predicted": 0.12679512601023768,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "cox_full",
+      "features": null,
+      "auc": 0.7634508348794063,
+      "brier": 0.09785673956873035,
+      "mean_predicted": 0.13089144785349147,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "logistic_fixed_horizon",
+      "features": null,
+      "auc": 0.7699443413729128,
+      "brier": 0.14886617365294677,
+      "mean_predicted": 0.2891122971462213,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "composite_risk_heuristic",
+      "features": null,
+      "auc": 0.5695732838589982,
+      "brier": null,
+      "mean_predicted": 20.44945054945055,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "advisory_history_only",
+      "features": null,
+      "auc": 0.813543599257885,
+      "brier": null,
+      "mean_predicted": 1.3941547177796645,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    },
+    {
+      "train_days": 80,
+      "horizon_days": 28,
+      "method": "base_rate",
+      "features": null,
+      "auc": 0.5,
+      "brier": 0.13321974127699468,
+      "mean_predicted": 0.20900253592561285,
+      "observed_rate": 0.15384615384615385,
+      "n_rows": 91,
+      "n_positive": 14,
+      "n_landmarks": 1
+    }
+  ]
+}

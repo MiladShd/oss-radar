@@ -170,6 +170,7 @@ def build_predictions(
     risk_model: RiskModel,
     growth_model_version: str | None = None,
     risk_model_version: str | None = None,
+    survival_scores: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     now = datetime.now(UTC)
     gs = growth_scoring.reset_index(drop=True)
@@ -184,6 +185,9 @@ def build_predictions(
     risk_proba = risk_model.predict_proba(risk_frame)
     proba_by_name = dict(zip(risk_frame["name"], risk_proba, strict=False))
     snap_by_name = {r["name"]: r for _, r in snapshots_latest.iterrows()}
+    survival_by_name = (
+        {r["name"]: r for _, r in survival_scores.iterrows()} if survival_scores is not None else {}
+    )
 
     records = []
     for i, name in enumerate(gs["name"]):
@@ -204,6 +208,7 @@ def build_predictions(
             lo, hi = round(float(interval[0][i]), 4), round(float(interval[1][i]), 4)
             m_lo, m_hi = momentum_from_pred(lo)[0], momentum_from_pred(hi)[0]  # sigmoid is monotone
 
+        surv = survival_by_name.get(name)
         momentum_reasons = _growth_reasons(shap_rows[i])
         reasons = momentum_reasons + risk_reasons
         records.append(
@@ -226,6 +231,8 @@ def build_predictions(
                 "momentum_score_lo": m_lo,
                 "momentum_score_hi": m_hi,
                 "interval_level": INTERVAL_LEVEL if interval is not None else None,
+                "p_new_advisory_14d": None if surv is None else float(surv["p_new_advisory_14d"]),
+                "p_new_advisory_30d": None if surv is None else float(surv["p_new_advisory_30d"]),
                 "momentum_label": m_label,
                 "risk_level": risk_level,
                 "momentum_reasons": momentum_reasons,

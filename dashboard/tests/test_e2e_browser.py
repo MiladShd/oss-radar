@@ -164,6 +164,17 @@ def test_drawer_shows_interval_and_closes_with_escape(page):
     page.wait_for_selector("#drawer:not(.on)")
 
 
+def test_drawer_shows_new_advisory_probability_or_nothing(page):
+    page.click('nav.tabs button[data-tab="packages"]')
+    page.click("#pbody tr.row >> text=vllm")
+    page.wait_for_selector("#drawer.on h2")
+    assert page.inner_text('#drawer [data-testid="advisory"]') == "new advisory: 12% in 14d · 25% in 30d"
+    page.keyboard.press("Escape")
+    page.click("#pbody tr.row >> text=langchain")
+    page.wait_for_selector("#drawer.on h2")
+    assert page.inner_text('#drawer [data-testid="advisory"]').strip() == ""  # not scored: no number
+
+
 def test_drawer_degrades_gracefully_without_interval(page):
     page.click('nav.tabs button[data-tab="packages"]')
     page.click("#pbody tr.row >> text=langchain")
