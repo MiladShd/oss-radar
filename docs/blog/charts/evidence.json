@@ -1,0 +1,70 @@
+{
+  "snapshot_sha256": "e4d6862b129093beca8d4408928cee816446af153aebf2a0e2872c2e376012bd",
+  "snapshot_rows": 10556,
+  "date_range": [
+    "2026-06-20",
+    "2026-10-09"
+  ],
+  "n_packages": 91,
+  "package_days": 10101,
+  "events": 168,
+  "event_days": 46,
+  "count_decreases": 1,
+  "osv_failed_snapshots": 0,
+  "biggest_single_day_jump": 181.0,
+  "top_shock_days": [
+    {
+      "date": "2026-07-08",
+      "packages_with_new_advisories": 26
+    },
+    {
+      "date": "2026-07-14",
+      "packages_with_new_advisories": 22
+    },
+    {
+      "date": "2026-06-30",
+      "packages_with_new_advisories": 21
+    },
+    {
+      "date": "2026-07-13",
+      "packages_with_new_advisories": 15
+    },
+    {
+      "date": "2026-09-11",
+      "packages_with_new_advisories": 10
+    }
+  ],
+  "selected_model": {
+    "features": [
+      "log_vuln_history",
+      "log_vuln_recent_28d",
+      "log_days_since_release"
+    ],
+    "hazard_ratios_per_sd": {
+      "log_vuln_history": 2.293,
+      "log_vuln_recent_28d": 1.264,
+      "log_days_since_release": 0.755
+    },
+    "advisory_history_hr_ci": [
+      1.773,
+      2.965
+    ]
+  },
+  "full_model_hazard_ratios_per_sd": {
+    "log_vuln_history": 2.382,
+    "log_vuln_recent_28d": 1.232,
+    "log_downloads": 0.927,
+    "log_days_since_release": 0.754,
+    "scorecard": 0.904,
+    "bus_factor": 1.07
+  },
+  "current_forecast": {
+    "n_packages": 91,
+    "median_30d": 0.102,
+    "at_least_50pct_30d": 9,
+    "at_least_25pct_30d": 20,
+    "below_5pct_30d": 9,
+    "recent_baseline_daily_hazard": 0.00475
+  },
+  "poisson_equivalence_max_abs_coef_diff": 1.0144662887512368e-14
+}

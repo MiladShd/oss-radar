@@ -11,6 +11,7 @@ is unreachable. Setup: ``pip install playwright && python -m playwright install 
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 import time
@@ -27,6 +28,16 @@ CDN_PROBE = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
 VISIBLE_TABS = ["overview", "system", "audit", "packages", "models", "accuracy", "validation", "agents"]
 
 
+REQUIRED = os.environ.get("REQUIRE_BROWSER_TESTS") == "1"
+
+
+def _skip_or_fail(reason: str):
+    """Locally a missing browser/CDN skips; in CI (REQUIRE_BROWSER_TESTS=1) it must fail the build."""
+    if REQUIRED:
+        pytest.fail(f"browser tests are required here but cannot run: {reason}")
+    pytest.skip(reason)
+
+
 def _cdn_reachable() -> bool:
     try:
         with urllib.request.urlopen(CDN_PROBE, timeout=4) as resp:  # noqa: S310 - fixed https URL
@@ -38,7 +49,7 @@ def _cdn_reachable() -> bool:
 @pytest.fixture(scope="module")
 def base_url(tmp_path_factory):
     if not _cdn_reachable():
-        pytest.skip("CDN unreachable: the page needs Chart.js/KaTeX from jsdelivr")
+        _skip_or_fail("CDN unreachable: the page needs Chart.js/KaTeX from jsdelivr")
     from dashboard.app import main, queries
 
     wh = _seed(str(tmp_path_factory.mktemp("e2e") / "e2e.duckdb"))
@@ -68,7 +79,7 @@ def browser():
         try:
             launched = p.chromium.launch()
         except playwright_sync.Error as exc:  # browser binary not installed
-            pytest.skip(f"Chromium not installed: {exc}")
+            _skip_or_fail(f"Chromium not installed: {exc}")
         else:
             try:
                 yield launched
@@ -164,6 +175,17 @@ def test_drawer_shows_interval_and_closes_with_escape(page):
     page.wait_for_selector("#drawer:not(.on)")
 
 
+def test_drawer_shows_new_advisory_probability_or_nothing(page):
+    page.click('nav.tabs button[data-tab="packages"]')
+    page.click("#pbody tr.row >> text=vllm")
+    page.wait_for_selector("#drawer.on h2")
+    assert page.inner_text('#drawer [data-testid="advisory"]') == "new advisory: 12% in 14d · 25% in 30d"
+    page.keyboard.press("Escape")
+    page.click("#pbody tr.row >> text=langchain")
+    page.wait_for_selector("#drawer.on h2")
+    assert page.inner_text('#drawer [data-testid="advisory"]').strip() == ""  # not scored: no number
+
+
 def test_drawer_degrades_gracefully_without_interval(page):
     page.click('nav.tabs button[data-tab="packages"]')
     page.click("#pbody tr.row >> text=langchain")
@@ -202,10 +224,22 @@ def test_audit_requires_input_then_renders_results(page):
     assert page.locator("#auditRun").is_enabled()  # button re-enabled after the call
 
 
-def test_self_audit_button_runs(page):
+def test_self_audit_button_triggers_a_request_and_renders_its_result(page):
+    canned = {
+        "summary": {"total": 1, "audited": 1, "critical": 0, "high": 0, "watch": 0, "healthy": 1, "exposed": 0},
+        "packages": [{"name": "vllm", "status": "ok", "verdict": "healthy", "version": "1.0",
+                      "vuln_count": 0, "trend_pct": 1, "risk_score": 10, "momentum_score": 90}],
+    }
+    page.route("**/api/self-audit", lambda route: route.fulfill(json=canned))
     page.click('nav.tabs button[data-tab="audit"]')
-    page.click("#auditSelf")
-    page.wait_for_function("document.querySelector('#auditSummary').innerText.length > 0")
+    before = page.inner_text("#auditSummary")
+    with page.expect_request("**/api/self-audit") as request_info:
+        page.click("#auditSelf")
+    assert request_info.value.method == "GET"
+    page.wait_for_function(
+        "(old) => document.querySelector('#auditSummary').innerText !== old", arg=before
+    )
+    assert "1 of 1 audited" in page.inner_text("#auditSummary")
     assert _ignore_external(page.errors) == []
 
 

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 640" width="1100" height="640" role="img" aria-label="Three panels, one per training window, comparing five methods by forecast error. The survival model has the lowest error in each; the standard classifier and the whole-history baseline over-forecast by roughly two to three times." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Anchoring to the recent event rate is what fixed the probabilities</title>
+<rect width="1100" height="640" fill="#fcfcfb" rx="14"/>
+<rect x="0.5" y="0.5" width="1099" height="639" fill="none" stroke="#cfcec8" rx="14"/>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">Anchoring to the recent event rate is what fixed the probabilities</text>
+<text x="40" y="82" font-size="15" fill="#52514e">Forecast error for a new security advisory within 14 days (Brier score, lower is better). Survival model shown in blue</text>
+<text x="318.0" y="238.0" font-size="13.5" fill="#0b0b0b" font-weight="700" text-anchor="end" >Survival model (shipped)</text>
+<text x="318.0" y="296.0" font-size="13.5" fill="#52514e" font-weight="400" text-anchor="end" >Classifier anchored to recent rate</text>
+<text x="318.0" y="354.0" font-size="13.5" fill="#52514e" font-weight="400" text-anchor="end" >Recent average rate, no features</text>
+<text x="318.0" y="412.0" font-size="13.5" fill="#52514e" font-weight="400" text-anchor="end" >Standard classifier</text>
+<text x="318.0" y="470.0" font-size="13.5" fill="#52514e" font-weight="400" text-anchor="end" >Survival model, whole-history baseline</text>
+<text x="330.0" y="128.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >Trained on first 60 days</text>
+<text x="330.0" y="150.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="start" >actual rate 8.2%</text>
+<line x1="330.0" y1="168.0" x2="330.0" y2="468.0" stroke="#cfcec8" stroke-width="1"/>
+<rect x="330.0" y="205.0" width="48.3" height="26.0" fill="#2a78d6" rx="4"/>
+<text x="386.3" y="223.0" font-size="14" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.060</text>
+<text x="386.3" y="241.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 6.6%</text>
+<rect x="330.0" y="263.0" width="98.2" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="436.2" y="281.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.122</text>
+<text x="436.2" y="299.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 21%</text>
+<rect x="330.0" y="321.0" width="61.0" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="399.0" y="339.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.076</text>
+<text x="399.0" y="357.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 8.9%</text>
+<rect x="330.0" y="379.0" width="134.9" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="472.9" y="397.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.167</text>
+<text x="472.9" y="415.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 29%</text>
+<rect x="330.0" y="437.0" width="70.2" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="408.2" y="455.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.087</text>
+<text x="408.2" y="473.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 22%</text>
+<text x="573.0" y="128.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >Trained on first 70 days</text>
+<text x="573.0" y="150.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="start" >actual rate 8.2%</text>
+<line x1="573.0" y1="168.0" x2="573.0" y2="468.0" stroke="#cfcec8" stroke-width="1"/>
+<rect x="573.0" y="205.0" width="49.1" height="26.0" fill="#2a78d6" rx="4"/>
+<text x="630.1" y="223.0" font-size="14" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.061</text>
+<text x="630.1" y="241.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 6.6%</text>
+<rect x="573.0" y="263.0" width="58.9" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="639.9" y="281.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.073</text>
+<text x="639.9" y="299.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 8.1%</text>
+<rect x="573.0" y="321.0" width="62.1" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="643.1" y="339.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.077</text>
+<text x="643.1" y="357.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 4.5%</text>
+<rect x="573.0" y="379.0" width="90.2" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="671.2" y="397.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.112</text>
+<text x="671.2" y="415.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 22%</text>
+<rect x="573.0" y="437.0" width="68.3" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="649.3" y="455.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.085</text>
+<text x="649.3" y="473.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 21%</text>
+<text x="816.0" y="128.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >Trained on first 80 days</text>
+<text x="816.0" y="150.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="start" >actual rate 7.7%</text>
+<line x1="816.0" y1="168.0" x2="816.0" y2="468.0" stroke="#cfcec8" stroke-width="1"/>
+<rect x="816.0" y="205.0" width="43.5" height="26.0" fill="#2a78d6" rx="4"/>
+<text x="867.5" y="223.0" font-size="14" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.054</text>
+<text x="867.5" y="241.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 7.3%</text>
+<rect x="816.0" y="263.0" width="47.7" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="871.7" y="281.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.059</text>
+<text x="871.7" y="299.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 6.3%</text>
+<rect x="816.0" y="321.0" width="57.6" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="881.6" y="339.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.072</text>
+<text x="881.6" y="357.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 5.4%</text>
+<rect x="816.0" y="379.0" width="60.3" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="884.3" y="397.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.075</text>
+<text x="884.3" y="415.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 17%</text>
+<rect x="816.0" y="437.0" width="58.9" height="26.0" fill="#b9b8b2" rx="4"/>
+<text x="882.9" y="455.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.073</text>
+<text x="882.9" y="473.0" font-size="11.5" fill="#7a7975" font-weight="400" text-anchor="start" >predicts 19%</text>
+<text x="40.0" y="540.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >The standard classifier and the whole-history survival baseline both forecast 17 to 29% for something that happened 8% of the time.</text>
+<text x="40.0" y="562.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >Anchoring either model to the recent rate fixes most of that. The survival model still had the lowest error in every window and ranked best (AUC 0.82 to 0.84).</text>
+<text x="40.0" y="584.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >Brier score is squared error of the probability: it rewards both ranking and calibration, so read it together with the predicted-versus-actual rate.</text>
+<text x="40" y="618" font-size="12.5" fill="#7a7975">Source: OSS Radar, 91 packages, 168 events, evaluated on weekly forecasts after each training window. Small samples: 21 to 45 events per window.</text>
+</svg>

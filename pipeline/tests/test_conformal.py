@@ -60,9 +60,70 @@ def test_drift_breaks_plain_conformal_and_drift_awareness_repairs_it():
 
 
 def test_aci_widens_after_misses_and_narrows_after_over_coverage():
-    r, d = _iid_residuals(n_dates=20)
-    wide = forward_chain(r * 0.01, d, alpha=0.2, half_life=2.0, gamma=0.2)  # tiny residuals, always hit
-    assert wide.final_alpha >= 0.2  # alpha_t drifts up (narrower) when coverage is too high
+    """Controlled hit/miss streams: the working alpha must move in the stated direction."""
+    n_dates, per = 14, 30
+    d = np.repeat(np.arange(n_dates), per)
+    growing = np.exp(0.4 * d)    # each date is larger than all history -> every scored date misses
+    shrinking = np.exp(-0.4 * d)  # each date is smaller than all history -> every scored date is covered
+    miss = forward_chain(growing, d, alpha=0.2, half_life=1e9, gamma=0.2)
+    assert miss.coverage == 0.0
+    assert miss.final_alpha < 0.2  # persistent misses => lower alpha => wider next interval
+    cover = forward_chain(shrinking, d, alpha=0.2, half_life=1e9, gamma=0.2)
+    assert cover.coverage == 1.0
+    assert cover.final_alpha > 0.2  # persistent over-coverage => higher alpha => narrower interval
+    # With adaptation switched off alpha cannot move at all (this is what the old test could not tell)
+    frozen = forward_chain(growing, d, alpha=0.2, half_life=1e9, gamma=0.0)
+    assert frozen.final_alpha == 0.2
+
+
+def test_unsupported_level_is_unavailable_not_silently_widened():
+    # 2 calibration points cannot support a 90% level; the quantile is infinite and must stay so.
+    assert math.isinf(weighted_conformal_quantile(np.array([1.0, 2.0]), np.ones(2), 0.9))
+    cal = DriftAwareConformal(alpha=0.1, alpha_t=0.1, residuals=[1.0, 2.0], date_index=[0, 1])
+    assert math.isinf(cal.half_width())
+
+
+def test_validation_labels_cannot_influence_earlier_calibration_residuals():
+    """Regression for the early-stopping leak: changing the LAST validation date's labels must not move
+    residuals on earlier validation dates (the model's stopping rule may not see those labels)."""
+    from oss_radar.models.evaluation import date_grouped_train_validation_test
+
+    frame = _growth_frame(n_dates=40, packages=20)
+    split = date_grouped_train_validation_test(frame)
+    train, val, test = split.train, split.validation.copy(), split.test
+    base, idx = GrowthModel(seed=3).calibration_residuals(train, val, test)
+    last_val_date = max(pd.to_datetime(val["feature_date"]))
+    val.loc[pd.to_datetime(val["feature_date"]) == last_val_date, GROWTH_TARGET_COLUMN] += 5.0
+    changed, idx2 = GrowthModel(seed=3).calibration_residuals(train, val, test)
+    earlier = idx < idx[: len(val)].max()  # all pooled rows before the last validation date
+    assert np.allclose(base[earlier], changed[earlier]), "earlier residuals moved: labels leaked"
+    assert not np.allclose(base[~earlier & (idx == idx[: len(val)].max())],
+                           changed[~earlier & (idx == idx[: len(val)].max())])
+
+
+def test_ninety_percent_interval_is_never_narrower_than_eighty():
+    model = GrowthModel(seed=3)
+    frame = _growth_frame()
+    model.fit(frame)
+    # force the independent adaptive states to cross: make the 90% state look narrower than the 80% one
+    model.conformal["0.9"]["residuals"] = [0.001] * len(model.conformal["0.9"]["residuals"])
+    lo8, hi8 = model.predict_interval(frame.tail(10), level=0.8)
+    lo9, hi9 = model.predict_interval(frame.tail(10), level=0.9)
+    assert np.all((hi9 - lo9) >= (hi8 - lo8) - 1e-12)
+
+
+def test_borrowing_requires_matching_features_and_records_provenance():
+    frame = _growth_frame()
+    challenger = GrowthModel(seed=3)
+    challenger.fit(frame)
+    different = GrowthModel(features=list(challenger.features)[:-1], seed=3)
+    assert different.adopt_calibration(challenger) is False
+    other_horizon = GrowthModel(seed=3, horizon_days=28)
+    assert other_horizon.adopt_calibration(challenger) is False
+    same = GrowthModel(seed=9)
+    assert same.calibration_source == "own"
+    assert same.adopt_calibration(challenger) is True
+    assert same.calibration_source == "borrowed"
 
 
 def test_calibrator_roundtrip_and_interval_symmetry():
@@ -75,7 +136,7 @@ def test_calibrator_roundtrip_and_interval_symmetry():
     assert evidence.n_dates_scored == 9
 
 
-def _growth_frame(n_dates: int = 40, packages: int = 12, seed: int = 5) -> pd.DataFrame:
+def _growth_frame(n_dates: int = 40, packages: int = 40, seed: int = 5) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2026-01-01", periods=n_dates).date
     rows = []
@@ -115,3 +176,24 @@ def test_legacy_artifact_without_conformal_state_degrades_to_no_interval():
     model.fit(_growth_frame())
     model.conformal = {}
     assert model.predict_interval(_growth_frame().tail(5)) is None
+
+
+def test_champion_without_calibration_borrows_the_challengers_but_not_vice_versa():
+    frame = _growth_frame()
+    challenger = GrowthModel(seed=3)
+    challenger.fit(frame)
+    champion = GrowthModel(seed=9)
+    champion.fit(frame)
+    champion.conformal = {}  # legacy artifact trained before calibration existed
+    assert champion.predict_interval(frame.tail(5)) is None
+
+    assert champion.adopt_calibration(challenger) is True
+    lo, hi = champion.predict_interval(frame.tail(5), level=0.8)
+    assert np.all(lo < hi)
+    # the borrowed state is a copy: mutating it must not change the challenger
+    champion.conformal["0.8"]["alpha_t"] = 0.49
+    assert challenger.conformal["0.8"]["alpha_t"] != 0.49
+    # already calibrated, self-adoption and uncalibrated sources are all no-ops
+    assert champion.adopt_calibration(challenger) is False
+    assert challenger.adopt_calibration(challenger) is False
+    assert GrowthModel(seed=1).adopt_calibration(GrowthModel(seed=2)) is False

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 600" width="1100" height="600" role="img" aria-label="Forest plot of six hazard ratios with 95 percent intervals on a log scale." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Past security trouble is the strongest signal of new advisories</title>
+<rect width="1100" height="600" fill="#fcfcfb" rx="14"/>
+<rect x="0.5" y="0.5" width="1099" height="599" fill="none" stroke="#cfcec8" rx="14"/>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">Past security trouble is the strongest signal of new advisories</text>
+<text x="40" y="82" font-size="15" fill="#52514e">How much each factor multiplies a package's rate of new advisories (one standard deviation higher)</text>
+<line x1="470.0" y1="150.0" x2="470.0" y2="440.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="470.0" y="462.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >0.5×</text>
+<line x1="594.7" y1="150.0" x2="594.7" y2="440.0" stroke="#0b0b0b" stroke-width="2"/>
+<text x="594.7" y="462.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >1×</text>
+<line x1="719.3" y1="150.0" x2="719.3" y2="440.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="719.3" y="462.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >2×</text>
+<line x1="792.3" y1="150.0" x2="792.3" y2="440.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="792.3" y="462.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >3×</text>
+<text x="594.7" y="140.0" font-size="13" fill="#0b0b0b" font-weight="700" text-anchor="middle" >no effect</text>
+<text x="470.0" y="492.0" font-size="13" fill="#eb6834" font-weight="700" text-anchor="start" >lowers the rate</text>
+<text x="820.0" y="492.0" font-size="13" fill="#2a78d6" font-weight="700" text-anchor="end" >raises the rate</text>
+<text x="440.0" y="190.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >Advisories the package already has</text>
+<line x1="705.1" y1="185.0" x2="796.5" y2="185.0" stroke="#2a78d6" stroke-width="3"/>
+<circle cx="750.8" cy="185.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="190.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >2.38×  (1.85 to 3.07)</text>
+<text x="440.0" y="238.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >New advisories in the last 28 days</text>
+<line x1="604.1" y1="233.0" x2="660.2" y2="233.0" stroke="#2a78d6" stroke-width="3"/>
+<circle cx="632.2" cy="233.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="238.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >1.23×  (1.05 to 1.44)</text>
+<text x="440.0" y="286.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >Maintainer concentration (bus factor)</text>
+<line x1="550.4" y1="281.0" x2="663.2" y2="281.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="606.8" cy="281.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="286.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >1.07×  (0.78 to 1.46)</text>
+<text x="440.0" y="334.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >Monthly downloads</text>
+<line x1="551.4" y1="329.0" x2="610.6" y2="329.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="581.0" cy="329.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="334.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >0.93×  (0.79 to 1.09)</text>
+<text x="440.0" y="382.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >OpenSSF security scorecard</text>
+<line x1="528.4" y1="377.0" x2="624.7" y2="377.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="576.6" cy="377.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="382.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >0.90×  (0.69 to 1.18)</text>
+<text x="440.0" y="430.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >Days since the last release</text>
+<line x1="505.2" y1="425.0" x2="582.7" y2="425.0" stroke="#eb6834" stroke-width="3"/>
+<circle cx="543.9" cy="425.0" r="6" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="430.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.75×  (0.61 to 0.94)</text>
+<text x="40.0" y="530.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" >Grey means the interval includes 1, so no clear effect. Recently released packages gain advisories faster, probably</text>
+<text x="40.0" y="551.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" >because active projects attract more scrutiny. This measures disclosure, not danger.</text>
+<text x="40" y="578" font-size="12.5" fill="#7a7975">Source: Cox proportional-hazards fit, 10,101 package-days, 168 events, cluster-robust 95% intervals.</text>
+</svg>
