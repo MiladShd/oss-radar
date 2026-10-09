@@ -19,6 +19,9 @@ if TYPE_CHECKING:  # annotations only — avoid dragging LightGBM into the lean 
     from oss_radar.models.growth import GrowthModel
     from oss_radar.models.risk import RiskModel
 
+# Nominal level of the persisted growth interval (see docs/CONFORMAL.md).
+INTERVAL_LEVEL = 0.8
+
 _GROWTH_REASON = {
     "log_d56": ("strong 8-week download base", "small 8-week download base"),
     "log_d84": ("strong 12-week download base", "small 12-week download base"),
@@ -170,11 +173,13 @@ def build_predictions(
 ) -> pd.DataFrame:
     now = datetime.now(UTC)
     gs = growth_scoring.reset_index(drop=True)
+    interval = None
     if growth_model is None:
         growth_pred, shap_rows = persistence_growth_predictions(gs)
     else:
         growth_pred = growth_model.predict(gs)
         shap_rows = growth_model.explain(gs)
+        interval = growth_model.predict_interval(gs, level=INTERVAL_LEVEL)
 
     risk_proba = risk_model.predict_proba(risk_frame)
     proba_by_name = dict(zip(risk_frame["name"], risk_proba, strict=False))
@@ -194,6 +199,11 @@ def build_predictions(
         risk_score = max(risk_score, safety_floor)
         risk_level = "high" if risk_score >= 66 else "medium" if risk_score >= 40 else "low"
 
+        lo = hi = m_lo = m_hi = None
+        if interval is not None:
+            lo, hi = round(float(interval[0][i]), 4), round(float(interval[1][i]), 4)
+            m_lo, m_hi = momentum_from_pred(lo)[0], momentum_from_pred(hi)[0]  # sigmoid is monotone
+
         momentum_reasons = _growth_reasons(shap_rows[i])
         reasons = momentum_reasons + risk_reasons
         records.append(
@@ -211,6 +221,11 @@ def build_predictions(
                     round(float(p), 6) if p is not None and p == p else None
                 ),
                 "growth_pred_70d": round(float(growth_pred[i]), 4),
+                "growth_pred_lo_70d": lo,
+                "growth_pred_hi_70d": hi,
+                "momentum_score_lo": m_lo,
+                "momentum_score_hi": m_hi,
+                "interval_level": INTERVAL_LEVEL if interval is not None else None,
                 "momentum_label": m_label,
                 "risk_level": risk_level,
                 "momentum_reasons": momentum_reasons,

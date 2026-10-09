@@ -394,6 +394,9 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>n==null?"—":Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(n);
 const pct=n=>n==null?"—":(n>=0?"+":"")+(n*100).toFixed(1)+"%";
 const logPct=n=>n==null?"—":pct(Math.expm1(Number(n)));
+/* Drift-aware conformal interval (docs/CONFORMAL.md): "80% range −3% to +14%", or "" when not calibrated. */
+const rangeTxt=p=>(p.growth_pred_lo_70d==null||p.growth_pred_hi_70d==null)?"":
+  `${Math.round((p.interval_level||0.8)*100)}% range ${logPct(p.growth_pred_lo_70d)} to ${logPct(p.growth_pred_hi_70d)}`;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let PKGS=[], sortKey="momentum_score", sortAsc=false, REPO="MiladShd/oss-radar";
 
@@ -536,7 +539,7 @@ function renderTable(){
       <td class="pkg">${p.name}</td><td><span class="cat">${p.category||""}</span></td>
       <td class="num"><span class="badge ${mb}">${Math.round(p.momentum_score||0)}</span></td>
       <td class="num"><b class="r-${rl}">${Math.round(p.risk_score||0)}</b></td>
-      <td class="num" style="color:${(p.growth_pred_70d||0)>=0?'var(--teal)':'var(--amber)'}">${logPct(p.growth_pred_70d)}</td>
+      <td class="num" data-testid="d70" title="${rangeTxt(p)}" style="color:${(p.growth_pred_70d||0)>=0?'var(--teal)':'var(--amber)'}">${logPct(p.growth_pred_70d)}</td>
       <td class="num">${fmt(p.stars)}</td><td class="num">${fmt(p.dependent_repos_count)}</td>
       <td class="num" style="color:${p.vuln_count>0?'var(--amber)':'var(--muted)'}">${p.vuln_count??0}</td></tr>`;
   }).join("")||`<tr><td colspan="8" class="loading">no matches</td></tr>`;
@@ -564,7 +567,8 @@ async function openDrawer(name){
     <div class="mono" style="color:var(--muted);font-size:12px">${p.category||""} · <a href="${repo}" target="_blank">${p.repo||"repo n/a"}</a></div>
     <div class="dscores">
       <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}</div>
-        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${logPct(p.growth_pred_70d)}</div></div>
+        <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${logPct(p.growth_pred_70d)}</div>
+        <div class="mono" data-testid="interval" style="font-size:12px;color:var(--muted)">${rangeTxt(p)||"range n/a (not calibrated)"}</div></div>
       <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}</div>
         <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk · ${
           p.risk_classifier_probability==null
@@ -854,7 +858,6 @@ async function loadAgents(){
 
 (async function(){
   try{const o=await j("/api/overview");}catch(e){}
-  fetch("/api/overview").then(()=>{});
   $("#ghlink").href="https://github.com/"+REPO;
   $("#foot").innerHTML=`OSS Radar · LightGBM · MLflow · BigQuery · Cloud Run · Cloud Scheduler · Claude agents<br>
     open source at <a href="https://github.com/${REPO}" target="_blank">github.com/${REPO}</a>`;
