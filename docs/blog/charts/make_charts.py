@@ -306,9 +306,11 @@ def chart_architecture() -> Svg:
     box(840, 330, 220, 84, "radar.miladblog.com", ["Cloudflare edge cache", "Worker proxy"],
         fill="#fdf0ea", stroke=ORANGE)
     arrow(989, y + 132, 989, 328)
-    box(40, 330, 760, 84, "Release path", ["pull request → lint + 219 tests (23 browser) + security scan → "
-                                           "exact-commit image build → Cloud Run deploy",
-                                           "infrastructure defined in Terraform"],
+    release_steps = (
+        "pull request → lint + 219 tests (23 browser) + security scan → "
+        "exact-commit image build → Cloud Run deploy"
+    )
+    box(40, 330, 760, 84, "Release path", [release_steps, "infrastructure defined in Terraform"],
         fill="#f3f2ee")
     s.text(40, 462, "Only the daily job writes to the warehouse and the dashboard reads it. A failure while fitting "
            "the survival model is caught,", 14.5, INK2)
