@@ -69,9 +69,9 @@ non-overlapping production cohorts.
 > generalization gate; published unseen-package Spearman `0.683` versus a calibrated-persistence rank baseline
 > `0.370`, with a separate package-block permutation test showing rank signal at `p < .001`.
 
-> Diagnosed non-stationary forecast error (MAE 0.104 → 0.230 over a month of origins), showing textbook split
-> conformal prediction covered 55.6% of outcomes against an 80% target; replaced it with recency-weighted conformal
-> quantiles plus Adaptive Conformal Inference, lifting forward-chained coverage to 76.6% (87.8% at the 90% target),
+> Diagnosed non-stationary forecast error (MAE 0.096 → 0.221 over a month of origins), showing textbook split
+> conformal prediction covered 58.5% of outcomes against an 80% target; replaced it with recency-weighted conformal
+> quantiles plus Adaptive Conformal Inference, lifting forward-chained coverage to 75.8% (87.4% at the 90% target),
 > shipped 80% prediction intervals to every package on the dashboard, and documented the derivation and the
 > limits in [CONFORMAL.md](CONFORMAL.md).
 
@@ -133,9 +133,9 @@ Avoid:
 The strongest portfolio story is not a perfect model score. It is the combination of candid validation,
 production operations, failure containment, and evidence-backed limits.
 - **Why not trust the standard conformal guarantee?** It requires exchangeability, and this series drifts: error
-  roughly doubled over a month. The first implementation under-covered (55.6% vs 80%), so I measured the drift,
+  roughly doubled over a month. The first implementation under-covered (58.5% vs 80%), so I measured the drift,
   added recency weighting and an online miscoverage controller (ACI), and evaluated by forward-chaining so no date
-  is scored with future information. The remaining shortfall (76.6% vs 80%) is reported, along with its causes:
+  is scored with future information. The remaining shortfall (75.8% vs 80%) is reported, along with its causes:
   seven scored dates, overlapping 70-day outcome windows, a lag-free evaluation, and settings compared on the same
   dates.
 - **How do you know the website works?** Unit and statistical tests cover the math; API tests cover the JSON

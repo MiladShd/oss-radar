@@ -3,7 +3,7 @@
 Split conformal prediction wraps any point forecast ŷ(x) in an interval ŷ ± q̂ whose half-width q̂ is a
 quantile of held-out absolute residuals. Its coverage guarantee needs calibration and future errors to be
 *exchangeable*. Package download growth is not: the model's error rises steadily across forecast origins
-(docs/CONFORMAL.md), so a plain calibration under-covers badly (56% realised vs 80% nominal on the
+(docs/CONFORMAL.md), so a plain calibration under-covers badly (59% realised vs 80% nominal on the
 production history). Two standard remedies are combined here:
 
 1. **Recency weighting** (Barber, Candès, Ramdas & Tibshirani 2023, "Conformal prediction beyond

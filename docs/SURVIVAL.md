@@ -79,7 +79,9 @@ the early period contained the bulk-publication shocks (the same drift lesson as
 
 `fit_cox_selected` fits every covariate, keeps those with robust `|z| > 2`, and refits. Because the rule sees
 only the rows it is given, applying it inside a training window cannot use test information. It chose the same
-two covariates (advisory history, days since release) in all three training windows.
+two covariates (advisory history, days since release) in all three training windows. On the full 111-day history
+it also keeps advisories in the last 28 days, so the model shipped today has three covariates and a
+hazard ratio of 2.29 per SD for advisory history.
 
 ## 3. Verifying the implementation
 

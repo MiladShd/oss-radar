@@ -32,9 +32,9 @@ supervised rows) the model's error grows steadily with the origin date:
 
 | Origin date | MAE | Mean error (actual − predicted) |
 |---|--:|--:|
-| 2026-07-02 | 0.104 | −0.045 |
-| 2026-07-17 | 0.161 | −0.119 |
-| 2026-07-29 | 0.230 | −0.205 |
+| 2026-07-02 | 0.096 | −0.036 |
+| 2026-07-17 | 0.157 | −0.120 |
+| 2026-07-29 | 0.221 | −0.191 |
 
 Download growth slowed through the summer and the model kept predicting too much of it. Residuals measured on
 older dates are therefore smaller than the residuals the model makes on newer ones.
@@ -43,8 +43,8 @@ Calibrating once on the validation dates and testing on the later test dates gav
 
 | Nominal | Realised coverage |
 |---|--:|
-| 80% | **55.6%** |
-| 90% | 81.8% |
+| 80% | **58.5%** |
+| 90% | 79.6% |
 
 The guarantee is not violated by a bug. Its assumption is simply false for this data, and the intervals were far
 too narrow.
@@ -86,6 +86,9 @@ packages at once, so `errₜ` is a rate rather than a single 0/1 (a batch versio
 
 ## 4. Results
 
+All figures use the production feature set (15 download features) on data through 2026-10-08, and the
+75.8% / 87.4% row matches the metrics the production pipeline recorded on 2026-10-09.
+
 Evaluation is **forward-chaining**: each origin date is predicted using only strictly earlier dates for
 calibration and for the ACI state. The pool is the 10 validation + test dates; the first 3 only seed the
 calibration set, so **7 dates (637 rows)** are scored. Residuals come from the train-only model, which never saw
@@ -93,13 +96,13 @@ these dates.
 
 | Method | Coverage @ 80% | Coverage @ 90% | Mean interval width @ 80% |
 |---|--:|--:|--:|
-| Plain split conformal (expanding window) | 67.2% | 84.0% | 0.356 |
-| + recency weighting (h = 2) | 70.3% | 86.3% | 0.391 |
-| + ACI (γ = 0.1) | 73.9% | 87.0% | 0.418 |
-| **+ ACI (γ = 0.2, shipped)** | **76.6%** | **87.8%** | 0.432 |
+| Plain split conformal (expanding window) | 67.0% | 84.3% | 0.336 |
+| + recency weighting (h = 2) | 71.4% | 86.2% | 0.368 |
+| + ACI (γ = 0.1) | 73.8% | 87.0% | 0.389 |
+| **+ ACI (γ = 0.2, shipped)** | **75.8%** | **87.4%** | 0.410 |
 
 Drift-aware calibration closes most, **not all**, of the gap to nominal coverage, at the price of intervals about
-21% wider (0.432 vs 0.356 at the 80% level). The shipped metrics are recomputed from live data on every training
+22% wider (0.410 vs 0.336 at the 80% level). The shipped metrics are recomputed from live data on every training
 run and stored with the model (`conformal_coverage_80`, `conformal_coverage_90`, `conformal_width_80`,
 `conformal_width_90`, `conformal_n_dates_scored`).
 
@@ -118,7 +121,7 @@ State these when presenting the numbers:
    lower under continuing drift. The first live proof is realised coverage on *matured* predictions, because
    intervals are stored with each prediction and can be scored once the 70 days elapse.
 3. **Settings were examined on the same 7 dates** they are reported on: γ and the half-life were compared on a
-   small grid during development, and γ = 0.2 scored best. Treat 76.6% as indicative, not as an unbiased estimate.
+   small grid during development, and γ = 0.2 scored best. Treat 75.8% as indicative, not as an unbiased estimate.
 4. **Outcome windows overlap.** Consecutive origins (3 days apart) share most of their 70-day outcome windows,
    so rows are far from independent and the effective sample size is much smaller than 637.
 5. **Calibration uses the train-only model.** Its residuals are valid out-of-sample scores; they are applied to the
