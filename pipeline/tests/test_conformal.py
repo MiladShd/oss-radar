@@ -115,3 +115,24 @@ def test_legacy_artifact_without_conformal_state_degrades_to_no_interval():
     model.fit(_growth_frame())
     model.conformal = {}
     assert model.predict_interval(_growth_frame().tail(5)) is None
+
+
+def test_champion_without_calibration_borrows_the_challengers_but_not_vice_versa():
+    frame = _growth_frame()
+    challenger = GrowthModel(seed=3)
+    challenger.fit(frame)
+    champion = GrowthModel(seed=9)
+    champion.fit(frame)
+    champion.conformal = {}  # legacy artifact trained before calibration existed
+    assert champion.predict_interval(frame.tail(5)) is None
+
+    assert champion.adopt_calibration(challenger) is True
+    lo, hi = champion.predict_interval(frame.tail(5), level=0.8)
+    assert np.all(lo < hi)
+    # the borrowed state is a copy: mutating it must not change the challenger
+    champion.conformal["0.8"]["alpha_t"] = 0.49
+    assert challenger.conformal["0.8"]["alpha_t"] != 0.49
+    # already calibrated, self-adoption and uncalibrated sources are all no-ops
+    assert champion.adopt_calibration(challenger) is False
+    assert challenger.adopt_calibration(challenger) is False
+    assert GrowthModel(seed=1).adopt_calibration(GrowthModel(seed=2)) is False

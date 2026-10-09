@@ -124,7 +124,12 @@ State these when presenting the numbers:
 5. **Calibration uses the train-only model.** Its residuals are valid out-of-sample scores; they are applied to the
    deployed model (refit on train + validation), which can only be a little better, so this is slightly
    conservative.
-6. **Uncalibrated fallback.** If a model has fewer than four distinct calibration dates, or the champion is the
+6. **Borrowed calibration.** The validation gate can hold a retrained challenger while an older champion keeps
+   serving. The champion's own residuals on the calibration dates are in-sample, so it cannot be calibrated from
+   them; it borrows the latest challenger's out-of-sample error scale instead (same features and
+   hyperparameters, different training date). That is an approximation, it is applied in memory only, and the
+   pipeline logs `pipeline.interval_calibration_borrowed` whenever it happens.
+7. **Uncalibrated fallback.** If a model has fewer than four distinct calibration dates, or the champion is the
    persistence fallback, no interval is shown and the dashboard says so.
 
 ## 6. Implementation map

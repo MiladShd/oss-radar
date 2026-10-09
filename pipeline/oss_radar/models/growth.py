@@ -154,6 +154,20 @@ class GrowthModel:
         self.metrics["conformal_n_dates_scored"] = float(evidence.n_dates_scored)
         self.metrics["conformal_n_calibration"] = float(len(residuals))
 
+    def adopt_calibration(self, other: GrowthModel) -> bool:
+        """Borrow ``other``'s conformal calibration when this model has none (in memory only).
+
+        A retrained challenger is calibrated on genuinely out-of-sample residuals, but it may be held
+        back by the validation gate while an older champion keeps serving. That champion's own residuals
+        on today's calibration dates are in-sample, so they cannot be used. The challenger shares the
+        features and hyperparameters, so its out-of-sample error scale is the best available estimate of
+        the champion's. The borrowed state is never persisted; docs/CONFORMAL.md lists it as a caveat.
+        """
+        if self.conformal or not other.conformal or other is self:
+            return False
+        self.conformal = {level: dict(blob) for level, blob in other.conformal.items()}
+        return True
+
     def predict_interval(
         self, df: pd.DataFrame, level: float = 0.8
     ) -> tuple[np.ndarray, np.ndarray] | None:

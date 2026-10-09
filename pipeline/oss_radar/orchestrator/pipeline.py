@@ -360,6 +360,16 @@ def _execute_pipeline(
     model_metrics["risk"]["serving"] = _serving_note("risk", risk_ver)
     model_metrics["growth"]["served_version"] = growth_ver
     model_metrics["risk"]["served_version"] = risk_ver
+    # An older champion may serve while a freshly calibrated challenger is held by the gate; let it
+    # borrow the challenger's out-of-sample error scale so intervals do not vanish (not persisted).
+    if (
+        serving_growth is not None
+        and serving_growth is not growth
+        and growth.model is not None
+        and serving_growth.adopt_calibration(growth)
+    ):
+        log.info("pipeline.interval_calibration_borrowed", serving=growth_ver,
+                 coverage_80=growth.metrics.get("conformal_coverage_80"))
     if serving_growth is not None:
         current_incumbent_metric = matched_comparisons.get("growth", {}).get(
             "incumbent_metric"
