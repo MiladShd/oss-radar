@@ -66,11 +66,14 @@ def base_url(tmp_path_factory):
 def browser():
     with playwright_sync.sync_playwright() as p:
         try:
-            b = p.chromium.launch()
+            launched = p.chromium.launch()
         except playwright_sync.Error as exc:  # browser binary not installed
             pytest.skip(f"Chromium not installed: {exc}")
-        yield b
-        b.close()
+        else:
+            try:
+                yield launched
+            finally:
+                launched.close()
 
 
 @pytest.fixture()
