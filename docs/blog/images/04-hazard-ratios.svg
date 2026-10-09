@@ -16,30 +16,30 @@
 <text x="470.0" y="492.0" font-size="13" fill="#eb6834" font-weight="700" text-anchor="start" >lowers the rate</text>
 <text x="820.0" y="492.0" font-size="13" fill="#2a78d6" font-weight="700" text-anchor="end" >raises the rate</text>
 <text x="440.0" y="190.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >Advisories the package already has</text>
-<line x1="705.7" y1="185.0" x2="797.8" y2="185.0" stroke="#2a78d6" stroke-width="3"/>
-<circle cx="751.7" cy="185.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<text x="856.0" y="190.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >2.39×  (1.85 to 3.09)</text>
+<line x1="705.1" y1="185.0" x2="796.5" y2="185.0" stroke="#2a78d6" stroke-width="3"/>
+<circle cx="750.8" cy="185.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="190.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >2.38×  (1.85 to 3.07)</text>
 <text x="440.0" y="238.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >New advisories in the last 28 days</text>
-<line x1="603.5" y1="233.0" x2="657.2" y2="233.0" stroke="#2a78d6" stroke-width="3"/>
-<circle cx="630.3" cy="233.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<text x="856.0" y="238.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >1.22×  (1.05 to 1.42)</text>
+<line x1="604.1" y1="233.0" x2="660.2" y2="233.0" stroke="#2a78d6" stroke-width="3"/>
+<circle cx="632.2" cy="233.0" r="6" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="238.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >1.23×  (1.05 to 1.44)</text>
 <text x="440.0" y="286.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >Maintainer concentration (bus factor)</text>
-<line x1="549.6" y1="281.0" x2="661.0" y2="281.0" stroke="#b9b8b2" stroke-width="3"/>
-<circle cx="605.3" cy="281.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
-<text x="856.0" y="286.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >1.06×  (0.78 to 1.45)</text>
+<line x1="550.4" y1="281.0" x2="663.2" y2="281.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="606.8" cy="281.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="286.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >1.07×  (0.78 to 1.46)</text>
 <text x="440.0" y="334.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >Monthly downloads</text>
-<line x1="551.7" y1="329.0" x2="610.7" y2="329.0" stroke="#b9b8b2" stroke-width="3"/>
-<circle cx="581.2" cy="329.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<line x1="551.4" y1="329.0" x2="610.6" y2="329.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="581.0" cy="329.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
 <text x="856.0" y="334.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >0.93×  (0.79 to 1.09)</text>
 <text x="440.0" y="382.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="end" >OpenSSF security scorecard</text>
-<line x1="528.6" y1="377.0" x2="625.1" y2="377.0" stroke="#b9b8b2" stroke-width="3"/>
-<circle cx="576.8" cy="377.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
-<text x="856.0" y="382.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >0.91×  (0.69 to 1.18)</text>
+<line x1="528.4" y1="377.0" x2="624.7" y2="377.0" stroke="#b9b8b2" stroke-width="3"/>
+<circle cx="576.6" cy="377.0" r="6" fill="#b9b8b2" stroke="#fcfcfb" stroke-width="2"/>
+<text x="856.0" y="382.0" font-size="14" fill="#0b0b0b" font-weight="400" text-anchor="start" >0.90×  (0.69 to 1.18)</text>
 <text x="440.0" y="430.0" font-size="14.5" fill="#0b0b0b" font-weight="600" text-anchor="end" >Days since the last release</text>
-<line x1="504.8" y1="425.0" x2="582.6" y2="425.0" stroke="#eb6834" stroke-width="3"/>
-<circle cx="543.7" cy="425.0" r="6" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<line x1="505.2" y1="425.0" x2="582.7" y2="425.0" stroke="#eb6834" stroke-width="3"/>
+<circle cx="543.9" cy="425.0" r="6" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
 <text x="856.0" y="430.0" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.75×  (0.61 to 0.94)</text>
 <text x="40.0" y="530.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" >Grey means the interval includes 1, so no clear effect. Recently released packages gain advisories faster, probably</text>
 <text x="40.0" y="551.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="start" >because active projects attract more scrutiny. This measures disclosure, not danger.</text>
-<text x="40" y="578" font-size="12.5" fill="#7a7975">Source: Cox proportional-hazards fit, 10,010 package-days, 167 events, cluster-robust 95% intervals.</text>
+<text x="40" y="578" font-size="12.5" fill="#7a7975">Source: Cox proportional-hazards fit, 10,101 package-days, 168 events, cluster-robust 95% intervals.</text>
 </svg>

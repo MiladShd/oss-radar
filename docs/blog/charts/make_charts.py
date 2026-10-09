@@ -76,7 +76,7 @@ def chart_drift() -> Svg:
     ratio = last["mae"] / first["mae"]
     s = Svg(
         520,
-        f"The model's error grew {ratio:.1f}× in four weeks, and most of it pointed one way",
+        f"The model's error grew {ratio:.2f}× in four weeks, and most of it pointed one way",
         "Forecast error by forecast date, in log-growth units (lower is better)",
         f"Source: OSS Radar growth model, {DATA['n_packages']} packages, forecast dates "
         f"{first['date']} to {last['date']}, data through {DATA['data_through']}.",
@@ -180,47 +180,47 @@ def chart_calibration() -> Svg:
     def pick(window, method):
         return next(r for r in rows if r["train_days"] == window and r["method"] == method)
 
+    methods = [
+        ("cox_selected", "Survival model (shipped)", True),
+        ("logistic_recent_recalibrated", "Classifier anchored to recent rate", False),
+        ("recent_rate_constant", "Recent average rate, no features", False),
+        ("logistic_fixed_horizon", "Standard classifier", False),
+        ("cox_selected_whole_history_baseline", "Survival model, whole-history baseline", False),
+    ]
     s = Svg(
-        560,
-        "A standard classifier over-forecast by 2 to 4 times; the survival model stayed close",
-        "Average predicted chance of a new security advisory in 14 days, against what actually happened",
-        f"Source: OSS Radar, {SURV['config']['n_packages']} packages, {SURV['config']['n_events']} events. "
-        "Models trained on the first 60, 70 or 80 days, scored on later weekly forecasts.",
-        "Grouped bars for three training windows. Survival model predicts 6.6 to 7.3 percent; the classifier "
-        "17 to 29 percent; the actual rate was 7.7 to 8.2 percent.",
+        640,
+        "Anchoring to the recent event rate is what fixed the probabilities",
+        "Forecast error for a new security advisory within 14 days (Brier score, lower is better). Survival model shown in blue",
+        f"Source: OSS Radar, {SURV['config']['n_packages']} packages, {SURV['config']['n_events']} events, "
+        "evaluated on weekly forecasts after each training window. Small samples: 21 to 45 events per window.",
+        "Three panels, one per training window, comparing five methods by forecast error. The survival "
+        "model has the lowest error in each; the standard classifier and the whole-history baseline "
+        "over-forecast by roughly two to three times.",
     )
-    series = [("cox_selected", "Survival model (shipped)", BLUE),
-              ("logistic_fixed_horizon", "Standard classifier", ORANGE),
-              ("observed", "What actually happened", DARK)]
-    ymax = 0.35
-    x0, y0, y1 = 90, 420, 150
-    gw = 290
-
-    def Y(v):
-        return y0 - (y0 - y1) * v / ymax
-
-    for t in (0, 0.1, 0.2, 0.3):
-        s.line(x0, Y(t), W - 40, Y(t), GRID if t else AXIS)
-        s.text(x0 - 12, Y(t) + 5, f"{int(t * 100)}%", 13, MUTED, anchor="end")
-    for gi, w in enumerate(windows):
-        gx = x0 + 40 + gi * (gw + 20)
-        for si, (key, _, color) in enumerate(series):
-            v = pick(w, "cox_selected")["observed_rate"] if key == "observed" else pick(w, key)["mean_predicted"]
-            bx = gx + si * 86
-            s.rect(bx, Y(v), 64, y0 - Y(v), color, 4)
-            s.text(bx + 32, Y(v) - 10, f"{v * 100:.1f}%", 15, INK, 700, "middle")
-        s.text(gx + 118, y0 + 30, f"Trained on first {w} days", 14, INK2, 600, "middle")
-    lx = 90
-    for _, label, color in series:
-        s.rect(lx, 112, 16, 16, color, 3)
-        s.text(lx + 24, 125, label, 14, INK, 600)
-        lx += 24 + len(label) * 8.3 + 36
-    ratio = [pick(w, "logistic_fixed_horizon")["mean_predicted"] / pick(w, "logistic_fixed_horizon")["observed_rate"]
-             for w in windows]
-    s.text(40, 490, f"The classifier over-forecast by {min(ratio):.1f} to {max(ratio):.1f} times. A number you "
-           "cannot set a threshold on is not a probability.", 14.5, INK2)
-    s.text(40, 513, "Ranking skill (AUC) was similar for both, 0.79 to 0.84, so the difference is "
-           "calibration, not ordering.", 14.5, INK2)
+    pw, gap, x_label = 215, 28, 330
+    max_brier = 0.18
+    for i, (key, label, shipped) in enumerate(methods):
+        s.text(x_label - 12, 238 + i * 58, label, 13.5, INK if shipped else INK2, 700 if shipped else 400, "end")
+    for wi, w in enumerate(windows):
+        gx0 = x_label + wi * (pw + gap)
+        actual = pick(w, "cox_selected")["observed_rate"]
+        s.text(gx0, 128, f"Trained on first {w} days", 15, INK, 700)
+        s.text(gx0, 150, f"actual rate {actual * 100:.1f}%", 13, MUTED)
+        s.line(gx0, 168, gx0, 468, AXIS)
+        for mi, (key, _, shipped) in enumerate(methods):
+            r = pick(w, key)
+            y = 205 + mi * 58
+            bw = (pw - 70) * r["brier"] / max_brier
+            s.rect(gx0, y, bw, 26, BLUE if shipped else NEUTRAL, 4)
+            s.text(gx0 + bw + 8, y + 18, f"{r['brier']:.3f}", 14, INK, 700 if shipped else 600)
+            s.text(gx0 + bw + 8, y + 36, f"predicts {r['mean_predicted'] * 100:.0f}%" if r["mean_predicted"] >= 0.095
+                   else f"predicts {r['mean_predicted'] * 100:.1f}%", 11.5, MUTED)
+    s.text(40, 540, "The standard classifier and the whole-history survival baseline both forecast 17 to 29% for "
+           "something that happened 8% of the time.", 14.5, INK2)
+    s.text(40, 562, "Anchoring either model to the recent rate fixes most of that. The survival model still had the "
+           "lowest error in every window and ranked best (AUC 0.82 to 0.84).", 14.5, INK2)
+    s.text(40, 584, "Brier score is squared error of the probability: it rewards both ranking and calibration, so "
+           "read it together with the predicted-versus-actual rate.", 14.5, INK2)
     return s
 
 
@@ -306,14 +306,14 @@ def chart_architecture() -> Svg:
     box(840, 330, 220, 84, "radar.miladblog.com", ["Cloudflare edge cache", "Worker proxy"],
         fill="#fdf0ea", stroke=ORANGE)
     arrow(989, y + 132, 989, 328)
-    box(40, 330, 760, 84, "Release path", ["pull request → lint + 211 tests (23 browser) + security scan → "
+    box(40, 330, 760, 84, "Release path", ["pull request → lint + 219 tests (23 browser) + security scan → "
                                            "exact-commit image build → Cloud Run deploy",
                                            "infrastructure defined in Terraform"],
         fill="#f3f2ee")
-    s.text(40, 462, "Only the daily job writes to the warehouse. The dashboard reads it, and a failure in the "
-           "survival step cannot stop the run.", 14.5, INK2)
-    s.text(40, 485, "A retrained model must pass a validation gate before it serves; the previous champion "
-           "keeps serving until it does.", 14.5, INK2)
+    s.text(40, 462, "Only the daily job writes to the warehouse and the dashboard reads it. A failure while fitting "
+           "the survival model is caught,", 14.5, INK2)
+    s.text(40, 485, "so the run continues without advisory probabilities. A retrained growth model must pass the "
+           "validation gate and beat the champion before it serves.", 14.5, INK2)
     return s
 
 

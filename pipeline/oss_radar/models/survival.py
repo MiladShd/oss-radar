@@ -17,6 +17,7 @@ standard errors. Everything here is NumPy only; ``docs/SURVIVAL.md`` derives the
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 
@@ -54,6 +55,30 @@ def covariate_frame(snapshots: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _osv_valid(frame: pd.DataFrame) -> pd.Series:
+    """True where the snapshot's OSV lookup succeeded.
+
+    ``ingest.osv.fetch`` returns ``vuln_count=0`` when the request fails, so a failed day looks like
+    "zero advisories" and the recovery looks like a burst of new ones. The per-source health flag is
+    stored with each snapshot; rows without it (older warehouses) are treated as valid.
+    """
+    if "source_status" not in frame:
+        return pd.Series(True, index=frame.index)
+
+    def ok(value) -> bool:
+        if isinstance(value, dict):
+            return bool(value.get("osv", True))
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed = json.loads(value)
+            except ValueError:
+                return True
+            return bool(parsed.get("osv", True)) if isinstance(parsed, dict) else True
+        return True
+
+    return frame["source_status"].map(ok).astype(bool)
+
+
 def build_counting_process(snapshot_history: pd.DataFrame) -> pd.DataFrame:
     """One row per package-day: covariates at day t−1, ``event`` = a new advisory appeared on day t.
 
@@ -74,7 +99,9 @@ def build_counting_process(snapshot_history: pd.DataFrame) -> pd.DataFrame:
     df = df.drop_duplicates(["name", "snapshot_date"], keep="last").reset_index(drop=True)
     origin = df["snapshot_date"].min()
     df["day"] = (df["snapshot_date"] - origin).dt.days
-    df["_vc"] = _numeric(df, "vuln_count")
+    count = _numeric(df, "vuln_count")
+    # A count is only usable if OSV answered and the value is finite; otherwise it is *unobserved*.
+    df["_vc"] = count.where(_osv_valid(df) & np.isfinite(count))
     cov = covariate_frame(df)
     frame = pd.concat([df[["name", "day", "_vc"]], cov], axis=1)
     by = frame.groupby("name", sort=False)
@@ -83,9 +110,11 @@ def build_counting_process(snapshot_history: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     for col in SURVIVAL_FEATURES:
         out[col] = by[col].shift(1)  # covariates as of the previous snapshot
-    consecutive = (out["day"] - prev_day) == 1
-    out["event"] = ((out["_vc"] > prev_vc) & consecutive).astype(int)
-    out = out[consecutive].drop(columns=["_vc"]).reset_index(drop=True)
+    # An interval is observed only if both endpoints are consecutive days with a valid count. Anything
+    # else is unobserved follow-up and is dropped, never labelled "no event".
+    observed = ((out["day"] - prev_day) == 1) & out["_vc"].notna() & prev_vc.notna()
+    out["event"] = (out["_vc"] > prev_vc).astype(int)
+    out = out[observed].drop(columns=["_vc"]).reset_index(drop=True)
     return out
 
 
@@ -108,6 +137,7 @@ class CoxFit:
     baseline_hazard: dict[int, float]  # Breslow: day -> d_t / S0_t
     l2: float
     converged: bool
+    log_likelihood_unpenalized: float = float("nan")
 
     @property
     def hazard_ratios(self) -> np.ndarray:
@@ -254,6 +284,7 @@ def fit_cox(
         log_likelihood=ll, null_log_likelihood=ll0,
         n_rows=len(data), n_events=int(event.sum()), n_event_days=int(event_days.sum()),
         mean=mean, scale=scale, fill=fill, baseline_hazard=baseline, l2=l2, converged=converged,
+        log_likelihood_unpenalized=float(ll + 0.5 * l2 * beta @ beta),
     )
 
 
@@ -372,7 +403,13 @@ def landmark_evaluation(
         at = frame[frame["day"] == L + 1]  # row for day L+1 holds covariates measured on day L
         if at.empty:
             continue
-        future = frame[(frame["day"] > L + 1) & (frame["day"] <= L + horizon_days)]
+        window = frame[(frame["day"] >= L + 1) & (frame["day"] <= L + horizon_days)]
+        followed = window.groupby("name").size()
+        complete = set(followed[followed == horizon_days].index)
+        at = at[at["name"].isin(complete)]  # a package not observed for the full window has no label
+        if at.empty:
+            continue
+        future = window[window["day"] > L + 1]
         had = set(future.loc[future["event"] == 1, "name"])
         y = at["name"].isin(had).astype(int).to_numpy()
         # outcome window is days L+1 … L+H: day L+1 is the covariate row itself, L+2 … L+H follow it

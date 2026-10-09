@@ -26,24 +26,36 @@ df = build_growth_training(hist, horizon=70).dropna(subset=[GROWTH_TARGET_COLUMN
 features = active_download_features()
 split = date_grouped_train_validation_test(df)
 tr, va, te = split.train, split.validation, split.test
-model = GrowthModel(features=features)._new_model(_MAX_ESTIMATORS)
-clip = lambda s: s.clip(_TARGET_MIN, _TARGET_MAX)  # noqa: E731
-model.fit(tr[features].astype(float), clip(tr[GROWTH_TARGET_COLUMN]),
-          eval_set=[(va[features].astype(float), clip(va[GROWTH_TARGET_COLUMN]))],
-          eval_metric="l1", callbacks=[lgb.early_stopping(40, verbose=False)])
+
+# Single source of truth: the same method the pipeline uses to produce calibration residuals (a model fitted
+# on train only, early-stopped on the last training dates, so no scored label influences it).
+growth = GrowthModel(features=features)
+r, di = growth.calibration_residuals(tr, va, te)
+n_val_rows = len(va)
+
+# Signed errors per date for the drift chart come from the same model's residuals' sign.
 pool = pd.concat([va, te], ignore_index=True)
-err = pool[GROWTH_TARGET_COLUMN].to_numpy(float) - model.predict(pool[features].astype(float))
+clean = growth._new_model(_MAX_ESTIMATORS)  # noqa: SLF001
+dates_tr = pd.to_datetime(tr["feature_date"]).dt.normalize()
+ordered = sorted(dates_tr.unique())
+inner = set(ordered[-max(2, math.ceil(len(ordered) * 0.2)):])
+mask = dates_tr.isin(inner).to_numpy()
+fit_part, stop_part = tr.loc[~mask], tr.loc[mask]
+clip = lambda y: y.astype(float).clip(_TARGET_MIN, _TARGET_MAX)  # noqa: E731
+clean.fit(fit_part[features].astype(float), clip(fit_part[GROWTH_TARGET_COLUMN]),
+          eval_set=[(stop_part[features].astype(float), clip(stop_part[GROWTH_TARGET_COLUMN]))],
+          eval_metric="l1", callbacks=[lgb.early_stopping(40, verbose=False)])
+err = pool[GROWTH_TARGET_COLUMN].to_numpy(float) - clean.predict(pool[features].astype(float))
+assert np.allclose(np.abs(err), r), "chart errors must equal the pipeline's calibration residuals"
 dates = pd.to_datetime(pool["feature_date"]).dt.date
 by = pd.DataFrame({"date": dates, "abs": np.abs(err), "err": err}).groupby("date").agg(
     mae=("abs", "mean"), bias=("err", "mean"), n=("abs", "size")).reset_index()
 
-rv = np.abs(va[GROWTH_TARGET_COLUMN].to_numpy(float) - model.predict(va[features].astype(float)))
-rt = np.abs(te[GROWTH_TARGET_COLUMN].to_numpy(float) - model.predict(te[features].astype(float)))
-r = np.abs(err)
-di = pd.factorize(pd.to_datetime(pool["feature_date"]), sort=True)[0]
+rv, rt = r[:n_val_rows], r[n_val_rows:]
 out = {"data_through": str(hist["date"].max().date()), "n_rows": int(len(df)),
        "n_packages": int(df["name"].nunique()), "n_origin_dates": int(df["feature_date"].nunique()),
        "n_features": len(features),
+       "calibration_model": "train-only; early stopping on the last 20% of training dates",
        "error_by_date": [{"date": str(d), "mae": float(m), "bias": float(b), "n": int(n)}
                          for d, m, b, n in by.itertuples(index=False)],
        "coverage": {}}
@@ -51,7 +63,7 @@ for a in (0.2, 0.1):
     k = math.ceil((len(rv) + 1) * (1 - a))
     single = float(np.mean(rt <= np.sort(rv)[k - 1]))
     rows = {"single_split": {"coverage": single}}
-    for key, hl, gm in (("plain", 1e9, 0.0), ("recency", 2.0, 0.0), ("aci", 2.0, 0.2)):
+    for key, hl, gm in (("plain", 1e9, 0.0), ("recency", 2.0, 0.0), ("aci_g01", 2.0, 0.1), ("aci", 2.0, 0.2)):
         res = forward_chain(r, di, alpha=a, half_life=hl, gamma=gm)
         rows[key] = {"coverage": res.coverage, "width": res.mean_width,
                      "dates_scored": res.n_dates_scored, "rows_scored": res.n_scored}

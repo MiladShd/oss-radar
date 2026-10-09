@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" width="1100" height="520" role="img" aria-label="Line chart. Typical error rises from 0.096 to 0.221; over-prediction rises from 0.036 to 0.191." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
-<title>The model's error grew 2.3× in four weeks, and most of it pointed one way</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" width="1100" height="520" role="img" aria-label="Line chart. Typical error rises from 0.120 to 0.234; over-prediction rises from 0.054 to 0.205." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>The model's error grew 1.95× in four weeks, and most of it pointed one way</title>
 <rect width="1100" height="520" fill="#fcfcfb" rx="14"/>
 <rect x="0.5" y="0.5" width="1099" height="519" fill="none" stroke="#cfcec8" rx="14"/>
-<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">The model's error grew 2.3× in four weeks, and most of it pointed one way</text>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">The model's error grew 1.95× in four weeks, and most of it pointed one way</text>
 <text x="40" y="82" font-size="15" fill="#52514e">Forecast error by forecast date, in log-growth units (lower is better)</text>
 <line x1="110.0" y1="410.0" x2="760.0" y2="410.0" stroke="#cfcec8" stroke-width="1"/>
 <text x="96.0" y="415.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="end" >0.00</text>
@@ -21,20 +21,20 @@
 <text x="543.3" y="438.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >20 Jul</text>
 <text x="760.0" y="438.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >29 Jul</text>
 <text x="40.0" y="108.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="start" >log-growth</text>
-<polyline points="110.0,302.7 182.2,299.8 254.4,284.7 326.7,270.0 398.9,248.0 471.1,233.6 543.3,224.5 615.6,206.2 687.8,184.4 760.0,162.5" fill="none" stroke="#2a78d6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<polyline points="110.0,369.8 182.2,378.6 254.4,363.1 326.7,339.6 398.9,307.8 471.1,276.0 543.3,261.6 615.6,240.0 687.8,217.0 760.0,195.6" fill="none" stroke="#eb6834" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="110.0" cy="302.7" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="110.0" cy="369.8" r="5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="760.0" cy="162.5" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
-<circle cx="760.0" cy="195.6" r="5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
-<text x="114.0" y="288.7" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.096</text>
-<text x="114.0" y="395.8" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.036</text>
-<text x="776.0" y="167.5" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.221</text>
-<text x="776.0" y="200.6" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.191</text>
-<text x="836.0" y="160.5" font-size="15" fill="#2a78d6" font-weight="700" text-anchor="start" >Typical error</text>
-<text x="836.0" y="179.5" font-size="12.5" fill="#7a7975" font-weight="400" text-anchor="start" >average miss, either way</text>
-<text x="836.0" y="198.6" font-size="15" fill="#c24a1c" font-weight="700" text-anchor="start" >Over-prediction</text>
-<text x="836.0" y="217.6" font-size="12.5" fill="#7a7975" font-weight="400" text-anchor="start" >average lean too high</text>
-<text x="40.0" y="478.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >On 29 July the model over-shot by 0.191 on average against a typical miss of 0.221, so nearly all of its error pointed the same way.</text>
+<polyline points="110.0,275.5 182.2,278.1 254.4,264.7 326.7,255.5 398.9,235.4 471.1,219.4 543.3,207.8 615.6,187.3 687.8,166.4 760.0,147.5" fill="none" stroke="#2a78d6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="110.0,349.2 182.2,354.9 254.4,343.9 326.7,322.4 398.9,292.7 471.1,265.2 543.3,245.4 615.6,223.8 687.8,201.6 760.0,180.6" fill="none" stroke="#eb6834" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="110.0" cy="275.5" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="110.0" cy="349.2" r="5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="760.0" cy="147.5" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="760.0" cy="180.6" r="5" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="114.0" y="261.5" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.120</text>
+<text x="114.0" y="375.2" font-size="14" fill="#0b0b0b" font-weight="600" text-anchor="start" >0.054</text>
+<text x="776.0" y="152.5" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.234</text>
+<text x="776.0" y="185.6" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="start" >0.205</text>
+<text x="836.0" y="145.5" font-size="15" fill="#2a78d6" font-weight="700" text-anchor="start" >Typical error</text>
+<text x="836.0" y="164.5" font-size="12.5" fill="#7a7975" font-weight="400" text-anchor="start" >average miss, either way</text>
+<text x="836.0" y="183.6" font-size="15" fill="#c24a1c" font-weight="700" text-anchor="start" >Over-prediction</text>
+<text x="836.0" y="202.6" font-size="12.5" fill="#7a7975" font-weight="400" text-anchor="start" >average lean too high</text>
+<text x="40.0" y="478.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >On 29 July the model over-shot by 0.205 on average against a typical miss of 0.234, so nearly all of its error pointed the same way.</text>
 <text x="40" y="498" font-size="12.5" fill="#7a7975">Source: OSS Radar growth model, 91 packages, forecast dates 2026-07-02 to 2026-07-29, data through 2026-10-08.</text>
 </svg>

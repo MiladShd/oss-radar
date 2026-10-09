@@ -12,7 +12,10 @@ production history). Two standard remedies are combined here:
 2. **Adaptive Conformal Inference** (Gibbs & Candès 2021): the working miscoverage level α_t is updated from
    observed misses, ``α_{t+1} = α_t + γ (α − err_t)``. Missing more than intended lowers α_t (wider
    intervals); missing less raises it. Here ``err_t`` is the *fraction* of a date's rows that missed
-   (a batch version of ACI, because 91 packages resolve per origin date).
+   (a batch version of ACI, because 91 packages resolve per origin date), and α_t is clipped to
+   [0.01, 0.5]. **This is a heuristic adaptation, not the published algorithm**: clipping and batching break
+   the recursion the long-run coverage theorem relies on, and under unbounded drift the intervals can still
+   miss almost everything. Treat measured forward-chained coverage as the only evidence.
 
 Pure NumPy so the lean dashboard image can import it without LightGBM.
 """
@@ -94,7 +97,11 @@ def forward_chain(
         q = weighted_conformal_quantile(r[cal], weights, 1.0 - alpha_t)
         target = d == k
         if not math.isfinite(q):
-            q = float(r[cal].max()) if cal.any() else math.inf
+            # The calibration set cannot support this level yet: no interval is available, so the date is
+            # not scored rather than being silently covered by an arbitrary width.
+            per_date.append({"date_index": int(k), "alpha_t": round(alpha_t, 4),
+                             "half_width": None, "coverage": None})
+            continue
         hit = r[target] <= q
         hits_total += int(hit.sum())
         scored += int(target.sum())
@@ -109,7 +116,7 @@ def forward_chain(
         coverage=hits_total / scored if scored else float("nan"),
         mean_width=float(np.mean(widths)) if widths else float("nan"),
         n_scored=scored,
-        n_dates_scored=len(per_date),
+        n_dates_scored=len(widths),
         final_alpha=alpha_t,
         per_date=per_date,
     )
@@ -151,14 +158,13 @@ class DriftAwareConformal:
         return cal, evidence
 
     def half_width(self) -> float:
-        """Interval half-width q̂ for the *next* (not-yet-seen) forecast origin."""
+        """Interval half-width q̂ for the *next* (not-yet-seen) forecast origin; ``inf`` if unsupported."""
         if not self.residuals:
             return math.inf
         r = np.asarray(self.residuals)
         d = np.asarray(self.date_index)
         weights = recency_weights(d, int(d.max()), self.half_life)
-        q = weighted_conformal_quantile(r, weights, 1.0 - self.alpha_t)
-        return q if math.isfinite(q) else float(r.max())
+        return weighted_conformal_quantile(r, weights, 1.0 - self.alpha_t)  # inf => unsupported level
 
     def interval(self, point: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         q = self.half_width()

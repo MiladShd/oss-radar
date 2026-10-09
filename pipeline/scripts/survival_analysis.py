@@ -80,23 +80,51 @@ def _schoenfeld_trend(cp: pd.DataFrame, fit) -> dict[str, dict]:
     return out
 
 
-def _logistic_scorer(cp, fit, train_end, horizon):
-    X, y = [], []
+def _logistic_scorers(cp, fit, train_end, horizon, recent_landmarks=4):
+    """Fixed-horizon logistic baselines trained only on landmarks whose outcome window ends by train_end.
+
+    Returns (plain, recalibrated, recent_rate, training_rate). ``recalibrated`` shifts the logit so the
+    mean prediction over the most recent ``recent_landmarks`` weekly-spaced training landmarks equals their
+    observed rate, which gives the classifier the same "use the recent regime" treatment the Cox
+    forecast gets from its 28-day baseline. ``recent_rate`` is that observed rate as a constant.
+    """
+    X, y, landmark = [], [], []
     fill = dict(zip(fit.features, fit.fill, strict=True))
     for L in range(1, train_end - horizon + 1):
         at = cp[cp["day"] == L + 1]
-        fut = cp[(cp["day"] > L + 1) & (cp["day"] <= L + horizon)]
-        had = set(fut.loc[fut["event"] == 1, "name"]) | set(at.loc[at["event"] == 1, "name"])
+        window = cp[(cp["day"] >= L + 1) & (cp["day"] <= L + horizon)]
+        followed = window.groupby("name").size()
+        at = at[at["name"].isin(followed[followed == horizon].index)]
+        had = set(window.loc[window["event"] == 1, "name"])
         X.append(at[fit.features].astype(float).fillna(fill).to_numpy())
         y.append(at["name"].isin(had).astype(int).to_numpy())
-    Xs, ys = (np.vstack(X) - fit.mean) / fit.scale, np.concatenate(y)
+        landmark.append(np.full(len(at), L))
+    Xs, ys, Ls = (np.vstack(X) - fit.mean) / fit.scale, np.concatenate(y), np.concatenate(landmark)
     model = LogisticRegression(C=1.0, max_iter=1000).fit(Xs, ys)
+    recent = Ls > Ls.max() - 7 * recent_landmarks
+    recent_rate = float(ys[recent].mean())
+    raw = model.predict_proba(Xs[recent])[:, 1]
 
-    def score(rows):
-        z = (rows[fit.features].astype(float).fillna(fill).to_numpy() - fit.mean) / fit.scale
-        return model.predict_proba(z)[:, 1]
+    def shifted(p, delta):
+        z = np.log(np.clip(p, 1e-9, 1 - 1e-9) / (1 - np.clip(p, 1e-9, 1 - 1e-9))) + delta
+        return 1 / (1 + np.exp(-z))
 
-    return score, float(ys.mean())
+    lo, hi = -8.0, 8.0
+    for _ in range(60):  # bisection on the intercept shift
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if shifted(raw, mid).mean() < recent_rate else (lo, mid)
+    delta = (lo + hi) / 2
+
+    def features_of(rows):
+        return (rows[fit.features].astype(float).fillna(fill).to_numpy() - fit.mean) / fit.scale
+
+    def plain(rows):
+        return model.predict_proba(features_of(rows))[:, 1]
+
+    def recalibrated(rows):
+        return shifted(plain(rows), delta)
+
+    return plain, recalibrated, recent_rate, float(ys.mean())
 
 
 def main() -> None:
@@ -114,12 +142,13 @@ def main() -> None:
             "n_packages": int(cp["name"].nunique()), "n_days": int(cp["day"].max()),
             "n_rows": int(len(cp)), "n_events": int(cp["event"].sum()),
             "n_event_days": int(cp.loc[cp["event"] == 1, "day"].nunique()),
-            "features": SURVIVAL_FEATURES, "ties": "breslow", "ridge_l2": full.l2,
+            "features": list(SURVIVAL_FEATURES), "ties": "breslow", "ridge_l2": full.l2,
             "event": "vuln_count increased vs the previous daily snapshot (new advisory)",
             "note": "covariates are the previous day's snapshot; calendar-time baseline hazard",
         },
         "full_sample_hazard_ratios": json.loads(summary.round(6).to_json(orient="records")),
-        "likelihood_ratio_chi2": 2 * (full.log_likelihood - full.null_log_likelihood),
+        # unpenalised likelihoods: the fitted objective carries a tiny ridge term
+        "likelihood_ratio_chi2": 2 * (full.log_likelihood_unpenalized - full.null_log_likelihood),
         "proportional_hazards_check": _schoenfeld_trend(cp, full),
         "landmark_evaluation": [],
     }
@@ -127,11 +156,17 @@ def main() -> None:
         train = cp[cp["day"] <= T0]
         cox_sel, cox_full = fit_cox_selected(train), fit_cox(train)
         for H in HORIZONS:
-            logit, base_rate = _logistic_scorer(cp, cox_full, T0, H)
+            logit, logit_recent, recent_rate, base_rate = _logistic_scorers(cp, cox_full, T0, H)
             scorers = {
                 "cox_selected": (lambda r, f=cox_sel, h=H: f.event_probability(r, h)),
                 "cox_full": (lambda r, f=cox_full, h=H: f.event_probability(r, h)),
+                # same Cox model but the baseline is the whole training history, not the last 28 days:
+                # isolates what the recency treatment contributes
+                "cox_selected_whole_history_baseline": (
+                    lambda r, f=cox_sel, h=H, w=T0: f.event_probability(r, h, window_days=w)),
                 "logistic_fixed_horizon": logit,
+                "logistic_recent_recalibrated": logit_recent,
+                "recent_rate_constant": (lambda r, b=recent_rate: np.full(len(r), b)),
                 "composite_risk_heuristic": (lambda r: r["composite"].fillna(0).to_numpy()),
                 "advisory_history_only": (lambda r: r["log_vuln_history"].fillna(0).to_numpy()),
                 "base_rate": (lambda r, b=base_rate: np.full(len(r), b)),

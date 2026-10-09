@@ -1,6 +1,6 @@
-# My "80% confidence" forecasts were right 58.5% of the time
+# My "80% confidence" forecasts were right 59.6% of the time
 
-*What I found when I made a dependency-risk dashboard honest about what it doesn't know.*
+*What I found when I made a dependency-risk dashboard honest about what it doesn't know — and what an independent review caught in my own work.*
 
 ---
 
@@ -8,45 +8,45 @@ Teams make real decisions about open-source dependencies: which one to adopt, wh
 
 I built [OSS Radar](https://radar.miladblog.com) to explore that gap. It's a personal project on public data: every day it pulls downloads, repository activity, vulnerabilities and security-health signals for 91 Python and AI packages, forecasts which ones are gaining momentum, and flags which are becoming risky to depend on.
 
-This post is about two upgrades that made its numbers trustworthy, and — more usefully — the two places where my first attempt was wrong.
+This post is about two upgrades that made its uncertainty more visible, the places where my first attempt was wrong, and the corrections an independent review forced.
 
 ![OSS Radar dashboard overview showing 91 tracked packages, average momentum, high-risk count and per-source data health.](images/06-dashboard-overview.png)
-
 
 ## The problem with a confident number
 
 The dashboard originally said things like *"this package will grow 12% over 70 days."* One number, no range. If the real range is −20% to +45%, that precision is false, and a decision made on it is a gamble you didn't know you were taking.
 
-The fix is a **prediction interval**: "12%, likely between −5% and +35%." I added one using a technique that comes with a nice promise — an "80% interval" should contain the real outcome 80% of the time, regardless of the model underneath.
+The fix is a **prediction interval**: "12%, likely between −5% and +35%." I added one using conformal prediction, a method that comes with a nice property: *under an assumption that the future resembles the data used to calibrate it*, an "80% interval" contains the real outcome at least 80% of the time, for almost any model.
 
-I tested the promise on my own data. **It held 58.5% of the time.**
+I tested that on my own data, calibrating on one period and checking on a later one. **The 80% interval held 59.6% of the time.**
 
 ## Why the guarantee broke
 
-Nothing was buggy. The technique assumes the future behaves like the past it was calibrated on, and mine didn't. The model's errors were getting bigger over time:
+Nothing "broke". The property depends on an assumption the data didn't satisfy: the model's errors were getting bigger over time.
 
-![Line chart: typical forecast error rises from 0.096 to 0.221 between 2 and 29 July, and the model's over-prediction rises from 0.036 to 0.191.](images/01-error-drift.png)
+![Line chart: typical forecast error rises from 0.120 to 0.234 between 2 and 29 July, and the model's over-prediction rises from 0.054 to 0.205.](images/01-error-drift.png)
 
-Typical error more than doubled in four weeks, and it leaned one way: the model kept expecting more growth than materialised. I can't say why with certainty — slower summer download growth is a plausible candidate, but I didn't isolate it. What matters is the consequence: ranges sized from older, smaller errors were too narrow for the errors coming next.
+Typical error nearly doubled in four weeks, and it leaned one way: the model kept expecting more growth than materialised. I can't say why with certainty — slower summer download growth is a plausible candidate, but I didn't isolate it. What matters is the consequence: ranges sized from older, smaller errors were too narrow for the errors coming next.
 
-The lesson I'd offer any team shipping forecasts: **a confidence guarantee is only as good as an assumption you can't directly test.** I only caught this because I evaluated on dates *later* than the ones I calibrated on. A random split would have produced a flattering 80% and I'd have shipped it.
+The lesson I'd offer any team shipping forecasts: **a confidence guarantee is only as good as an assumption you can't directly test.** I caught this because I evaluated on dates *later* than the ones I calibrated on. Mixing old and new periods in a random split could have hidden the deterioration.
 
 ## The fix, in plain terms
 
-Two changes, both standard in the research literature and simple to explain:
+Two changes, both drawn from the research literature:
 
 1. **Weight recent mistakes more.** When sizing the range, recent errors count for more than old ones, so the range follows current conditions.
 2. **Self-correct.** If the last few ranges missed more often than promised, widen the next one; if they were too generous, tighten.
 
 Evaluated the honest way — each date predicted using only earlier dates:
 
-![Bar chart of how often outcomes fell inside the forecast range for four methods, against the 80 and 90 percent promises. The shipped method reaches 75.8 and 87.4 percent.](images/02-coverage.png)
+![Bar chart of how often outcomes fell inside the forecast range for four methods, against the 80 and 90 percent promises. The shipped method reaches 76.6 and 88.4 percent.](images/02-coverage.png)
 
-That's a real improvement and **not a fix**: ranges are 22% wider and still short of target. Here is why I'm not claiming more:
+That's a real improvement and **not a fix**: ranges are about 15% wider and still short of the promise. Here is what I can and can't claim:
 
-- Only **7 dates** could be scored, which is thin for a method whose long-run guarantee needs many steps.
+- Only **7 dates** could be scored.
+- The self-correcting step is a **heuristic, not the published algorithm**. I clip and batch it in ways that break the theorem it's modelled on, and under strong, sustained drift it can still miss almost everything.
 - Outcomes take 70 days to resolve, so in production the calibration is staler than in my test, and live coverage may be lower.
-- I picked one setting by comparing a small grid on the same dates I report, so 75.8% is indicative, not an unbiased estimate.
+- I chose one setting by comparing a small grid on the same dates I report, so 76.6% is indicative, not an unbiased estimate.
 
 The real test costs nothing: ranges are stored with each prediction, so once 70 days pass I can score them against reality and publish the *measured* coverage.
 
@@ -54,56 +54,62 @@ The real test costs nothing: ranges are stored with each prediction, so once 70 
 
 The existing risk model answered a yes/no question over a fixed 14 days. That throws away *when* things happen and treats a package watched for two weeks the same as one watched for 110 days.
 
-I rebuilt that question as a **time-to-event model** (survival analysis, the same family used for customer churn): given what we know today, what's the chance a package receives a new security advisory in the next 14 or 30 days?
+I added a **time-to-event view** (survival analysis, the family used for customer churn) alongside it: given what we know today, what's the chance a package receives a new security advisory in the next 14 or 30 days? It's shown next to the existing risk score and does not change it.
 
-Three decisions made it trustworthy:
+Three design decisions mattered:
 
-- **Real events, checked.** 167 new-advisory events across 91 packages in the evaluation snapshot (168 today). I confirmed the advisory count only goes up (one decrease in 10,000+ package-days), so these are genuine disclosures, not data noise.
-- **Common shocks handled.** On three days in June and July, 21–26 packages each got new advisories at once, which looks like bulk publication. The model uses calendar time as its clock so those spikes don't get blamed on package features.
-- **No peeking.** Every input is as of the day *before* the thing being predicted.
+- **Real events, with caveats.** 168 observed increases in a package's advisory count across 91 packages. The count only goes up (one decrease in 10,000+ package-days), but a count increase can't distinguish a new publication from a backfill, so I call these *observed advisory-count increases*, not verified disclosures.
+- **Common shocks handled.** On three separate days (30 June, 8 July, 14 July), 21 to 26 packages each gained advisories at once, which looks like bulk publication. The model uses calendar time as its clock so those spikes aren't blamed on package features.
+- **No peeking, and no guessing.** Every input is as of the day *before* what's being predicted, and a day where the data source failed is treated as unobserved, never as "zero advisories".
 
-### It beat the obvious alternative where it counts
+### What actually fixed the probabilities
 
-I compared it with the approach most teams would reach for: a standard classifier on the same inputs. Trained on the first 60–80 days, then forecasting later dates:
+My first draft of this section said the survival model "beat the obvious alternative". Review forced a harder look, and the honest answer is more specific.
 
-![Grouped bars of predicted versus actual 14-day advisory rate for three training windows. The survival model predicts 6.6 to 7.3 percent; the classifier 17 to 29 percent; actual was 7.7 to 8.2 percent.](images/03-calibration.png)
+I compared the survival model with a standard classifier on the same inputs, plus controls that give the classifier and the survival model the same treatment of recent history. Trained on the first 60, 70 or 80 days, forecasting later dates:
 
-| 14-day forecast | Ranking skill (AUC) | Forecast error (Brier, lower is better) | Average predicted | Actually happened |
-|---|--:|--:|--:|--:|
-| **Survival model** | 0.82–0.84 | **0.054–0.061** | 6.6–7.3% | 7.7–8.2% |
-| Standard classifier | 0.79–0.82 | 0.075–0.167 | 17–29% | 7.7–8.2% |
-| Guess the average rate | 0.50 | 0.076–0.087 | — | — |
+![Three panels comparing five methods by forecast error for each training window. The survival model has the lowest error in each; the standard classifier and the whole-history survival baseline over-forecast by roughly two to three times.](images/03-calibration.png)
 
-Look at the middle rows. The classifier ranks packages almost as well, but **tells you there's a 17–29% chance of something that happens about 8% of the time** — and in two of the three test windows it scores *worse than guessing the average* on forecast error. For prioritisation that's the difference between a number you can set thresholds on and a number you have to second-guess.
+- **The standard classifier forecast 17–29% for something that happened about 8% of the time.** So did the *same survival model* (19–22%) when I let its baseline hazard be the whole training history. Training windows that contain bulk-publication spikes teach any model a rate that's too high for what follows.
+- **What fixed it was anchoring to the recent event rate** — a treatment any model can get. Give the classifier that treatment and it comes close in two of three windows.
+- **The survival model still had the lowest forecast error in every window**, and ranked best of the model-based forecasts (AUC 0.82–0.84 vs 0.79–0.82). But the margins are modest, the samples are small (21–45 events per window), and a constant "recent average rate" with no features at all was a strong baseline: the features improve on it by about 0.016.
+
+So the defensible claim isn't "survival analysis fixes calibration". It's: **anchor probabilities to the recent rate, and then a model with a few well-chosen features adds a small, consistent improvement.** Brier score rewards ranking and calibration together, and nothing here validates calibration at individual probability levels or a decision threshold — those remain open.
 
 ### The result I almost left out
 
-One input — *how many advisories the package already has* — ranks packages **slightly better than the whole model** (0.85 vs 0.82–0.84). Past security trouble is the strongest signal by a distance: each standard deviation more history means about 2.3× the rate of new advisories.
+One input — *how many advisories the package already has* — ranks packages **slightly better than the whole model** (0.85 vs 0.82–0.84). Past security trouble is the strongest signal by a distance: each standard deviation more history is associated with about 2.3× the rate of advisory-count increases.
 
-I'm reporting that because it changes what the model is for. If you only need a ranking, sort by advisory history. What the model adds is a **calibrated probability** you can act on, with honest uncertainty. Today, for example, it puts 9 of the 91 packages at 50% or higher for a new advisory within 30 days and 20 at 25% or higher, while the median package is around 10%.
+![Forest plot of six hazard ratios with 95 percent intervals. Advisory history is 2.38 times, recent advisories 1.23 times, days since release 0.75 times; downloads, scorecard and bus factor include 1.](images/04-hazard-ratios.png)
 
-![Forest plot of six hazard ratios with 95 percent intervals. Advisory history is 2.39 times, recent advisories 1.22 times, days since release 0.75 times; downloads, scorecard and bus factor include 1.](images/04-hazard-ratios.png)
+I'm reporting that because it changes what the model is for. If you only need a ranking, sort by advisory history. What the survival form adds is probabilities on a recent-rate scale, hazard ratios with intervals, and correct handling of partial follow-up. As an illustration of how it reads: on today's data it puts 9 of the 91 packages at 50% or higher for a new advisory within 30 days and 20 at 25% or higher, with a median around 10%. Those are estimates under today's regime, not evaluated forecasts.
 
+And one result that cuts against a common instinct: in this retrospective fit, **more recently released packages show *higher* rates of advisory-count increases**. My original risk score penalised "stale" packages. A scrutiny explanation — active projects attract more disclosure — is plausible, but I haven't tested it, so the model measures advisory *arrival*, not danger.
 
-And one result that cuts against a common instinct: **recently released packages gain advisories *faster***, not slower. My original risk score penalised "stale" packages. The data point the other way. The likely explanation is that active projects attract more scrutiny and disclosure, so this measures advisory *arrival*, not danger — but it's a good reminder to check that a heuristic encodes what you think it does.
+## What the review caught
 
-## What made this trustworthy
+I asked an independent reviewer to attack this work before publishing. It found real problems, which I verified and fixed:
+
+- **An open proxy on my own domain.** The Cloudflare Worker that serves the dashboard built its upstream URL in a way that let `//other-site/path` escape to another host. I confirmed it live, closed it, and added regression tests.
+- **A leak in my evaluation.** My calibration model had been early-stopped on the same validation dates it was then scored on. I rebuilt it so no scored label can influence it, added a test that fails if one does, and re-ran every number in this post.
+- **A data-quality hole.** When the vulnerability source fails, my collector stored "zero advisories", and the recovery would have looked like a burst of new ones. Those days are now unobserved. (The snapshot behind the results contains no failed lookups, so the numbers didn't change.)
+- **Overclaims in my own writing.** "Calibrated", "genuine disclosures" and "proved" all got walked back to what the evidence supports.
 
 ![Flow diagram: public data to a daily Cloud Run job, BigQuery warehouse, models, FastAPI dashboard and the radar.miladblog.com Cloudflare edge, with a pull request, test and deploy path beneath.](images/05-architecture.png)
 
-The parts of this work I'd defend in any engineering review:
+## What made this trustworthy
 
-- **Evaluation that can't flatter itself.** Every number above is from predicting dates later than the training dates.
-- **Independent verification of the maths.** I wrote the model's core by hand, then proved it against an unrelated implementation: agreement to 14 decimal places. A separate library I tried first disagreed — I traced it with a brute-force check to that library failing to converge on this data, rather than trusting either.
-- **Tests that match the product.** 211 automated tests, 23 of them driving the real dashboard in a headless browser against a seeded database, on every pull request.
-- **Limits written down.** Both methods ship with a document stating what they don't show.
-- **A boring, safe rollout.** Changes go through a pull request, automated checks, then a deploy that is tied to the exact commit; the new forecasts are informational and don't alter the existing risk score.
+- **Evaluation that tries not to flatter itself.** Every predictive number is from forecasting dates later than the training dates, using a retrospective chronological split. Hazard ratios describe the fitted sample.
+- **Independent verification of the maths.** I wrote the model's core by hand, then checked it against brute-force likelihood loops and an equivalent Poisson regression: coefficients agree to about 1e-14 on the real data. A separate library I tried first disagreed; I traced it to that library failing to converge, not by trusting either.
+- **Tests that match the product.** More than 200 automated tests, including headless-browser tests that drive the real dashboard against a seeded database. In CI the browser tests are required to run, and a missing browser fails the build.
+- **Limits written down.** Each method ships with a document stating what it doesn't show, and every figure in this post can be regenerated from scripts in the repository.
+- **A boring, safe rollout.** Changes go through a pull request, automated checks, then a deploy tied to the exact commit. Survival forecasts are informational and don't alter the existing risk score; if fitting them fails, the run continues without them.
 
 ## Limits, and what's next
 
-This is a personal project on about 110 days of public data. 167 events is enough to estimate a few effects, not dozens; test windows contain only 14–45 positive cases, so expect the AUCs to wobble by around ±0.05. It predicts when advisories are *published*, not whether a package is exploitable.
+This is a personal project on about 110 days of public data. 168 events is enough to estimate a few effects, not dozens; evaluation windows hold 14–45 positive cases from overlapping weekly forecasts, so AUC uncertainty was not estimated and shouldn't be assumed small. It predicts when advisory counts increase, not whether a package is exploitable.
 
-Next: publish the measured coverage once the first predictions mature, model the 70-day delay explicitly, and separate "gets an advisory" from "goes stale" as competing events.
+Next: publish the measured coverage once the first predictions mature, model the 70-day delay explicitly, add reliability checks and uncertainty for the advisory probabilities, and separate "gets an advisory" from "goes stale" as competing events.
 
 ---
 

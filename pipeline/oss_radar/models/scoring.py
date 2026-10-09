@@ -231,6 +231,9 @@ def build_predictions(
                 "momentum_score_lo": m_lo,
                 "momentum_score_hi": m_hi,
                 "interval_level": INTERVAL_LEVEL if interval is not None else None,
+                "interval_source": (
+                    getattr(growth_model, "calibration_source", "own") if interval is not None else None
+                ),
                 "p_new_advisory_14d": None if surv is None else float(surv["p_new_advisory_14d"]),
                 "p_new_advisory_30d": None if surv is None else float(surv["p_new_advisory_30d"]),
                 "momentum_label": m_label,

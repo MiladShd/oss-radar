@@ -69,20 +69,22 @@ non-overlapping production cohorts.
 > generalization gate; published unseen-package Spearman `0.683` versus a calibrated-persistence rank baseline
 > `0.370`, with a separate package-block permutation test showing rank signal at `p < .001`.
 
-> Diagnosed non-stationary forecast error (MAE 0.096 → 0.221 over a month of origins), showing textbook split
-> conformal prediction covered 58.5% of outcomes against an 80% target; replaced it with recency-weighted conformal
-> quantiles plus Adaptive Conformal Inference, lifting forward-chained coverage to 75.8% (87.4% at the 90% target),
-> shipped 80% prediction intervals to every package on the dashboard, and documented the derivation and the
-> limits in [CONFORMAL.md](CONFORMAL.md).
+> Diagnosed drifting forecast error (typical error 0.12 → 0.23 over four weeks of forecast dates) and showed that
+> textbook split conformal prediction covered 59.6% of outcomes against an 80% target; added recency-weighted
+> conformal quantiles and a clipped adaptive-width update, raising forward-chained coverage to
+> 76.6% (88.4% at the 90% target) over seven scored dates, shipped 80% ranges to every package, and documented the
+> limits (heuristic adaptation, small sample, lag-free evaluation) in [CONFORMAL.md](CONFORMAL.md).
 
-> Replaced a fixed-horizon risk label with survival analysis: implemented a Cox proportional-hazards model with
-> time-varying covariates, Breslow baseline hazard, and package-clustered robust errors from scratch in NumPy,
-> verified it against brute-force likelihood loops and an exact Poisson-regression identity (coefficients agree to
-> 1e-14), and evaluated it with temporal landmark forecasts: calibrated 14-day advisory probabilities (Brier 0.061
-> vs 0.112 for a same-covariate logistic classifier, which scored worse than the base rate), while reporting
-> honestly that advisory history alone ranks slightly better (AUC 0.85 vs 0.82).
+> Added a survival-analysis view of dependency risk alongside the existing fixed-horizon classifier: a Cox
+> proportional-hazards model with time-varying covariates, Breslow baseline hazard and package-clustered robust
+> errors written in NumPy and verified against brute-force likelihood loops and an exact Poisson-regression
+> identity (coefficients agree to 1e-14). Temporal landmark forecasts against recency-matched baselines showed
+> that anchoring probabilities to the recent event rate, not the survival form alone, removed a 2 to 4x
+> over-forecast (17 to 29% predicted vs 8% observed); the survival model then had the lowest Brier score in every
+> window (0.054 to 0.061 vs 0.059 to 0.122 for an anchored classifier), while advisory history alone
+> ranked slightly better (AUC 0.85 vs 0.82 to 0.84).
 
-> Built a 211-test automated suite (23 headless-Chromium Playwright tests plus API, statistical, and pipeline
+> Built a 219-test automated suite (23 headless-Chromium Playwright tests plus API, statistical, and pipeline
 > tests) that drives the live dashboard against a seeded warehouse: every tab, search/sort/category filters, the
 > package drawer, the dependency-audit form, conformal intervals reaching the UI, graceful no-interval states, and
 > a 375px mobile layout; wired into GitHub Actions so regressions block merges.
@@ -132,20 +134,26 @@ Avoid:
 
 The strongest portfolio story is not a perfect model score. It is the combination of candid validation,
 production operations, failure containment, and evidence-backed limits.
-- **Why not trust the standard conformal guarantee?** It requires exchangeability, and this series drifts: error
-  roughly doubled over a month. The first implementation under-covered (58.5% vs 80%), so I measured the drift,
-  added recency weighting and an online miscoverage controller (ACI), and evaluated by forward-chaining so no date
-  is scored with future information. The remaining shortfall (75.8% vs 80%) is reported, along with its causes:
-  seven scored dates, overlapping 70-day outcome windows, a lag-free evaluation, and settings compared on the same
-  dates.
+- **Why not trust the standard conformal guarantee?** It requires exchangeability, and this series drifts: typical
+  error roughly doubled over a month. The first implementation under-covered (59.6% vs 80%), so I measured the drift,
+  added recency weighting and an adaptive-width update, and evaluated by forward-chaining so no date is scored
+  with later information. The update is a clipped, batched heuristic, not the published algorithm, so I report
+  measured coverage (76.6% vs 80%) and its limits: seven scored dates, overlapping 70-day outcome windows, a
+  lag-free evaluation, and settings compared on the same dates. An independent review also found that my
+  calibration model had been early-stopped on the same validation dates it was then scored on; I fixed it,
+  re-ran everything, and added a regression test.
 - **How do you know the website works?** Unit and statistical tests cover the math; API tests cover the JSON
-  contracts; Playwright browser tests cover what a visitor does. They run on every pull request, and the
-  browser tests skip (rather than flake) when the CDN or Chromium is unavailable.
-- **Why survival analysis instead of a classifier?** A classifier needs a fixed horizon and throws away timing and
-  partial follow-up. The Cox model uses every day of exposure, handles censoring, and its calendar-time baseline
-  separates "everyone got advisories on July 8" from "this package is riskier". That is why its probabilities are
-  calibrated while a logistic model on the same inputs forecast 22% against 8% observed.
+  contracts; Playwright browser tests cover what a visitor does. In CI the browser tests are required to run (a
+  missing browser fails the build) and locally they skip when the CDN or Chromium is unavailable.
+- **Why survival analysis instead of a classifier?** A classifier needs a fixed horizon and discards timing and
+  partial follow-up; the Cox model uses every day of exposure and handles censoring. But the evidence was more
+  specific than that: the *calibration* improvement came from anchoring to the recent event rate, which I could
+  also give the classifier. With that anchoring the survival model still had the lowest Brier score in every
+  window, by modest margins on small samples, and a constant recent rate was a strong baseline.
 - **What did the survival model teach you that you did not expect?** Days since last release had a hazard ratio of
-  0.75, so recently released packages gain advisories faster, the opposite of treating staleness as risk. I
-  reported it as a disclosure effect (active projects attract scrutiny), not as safety, and noted the model
-  predicts advisory arrival, not exploitability.
+  about 0.75, so recently released packages show more advisory-count increases, the opposite of treating
+  staleness as risk. A scrutiny explanation is plausible but untested; the model measures advisory arrival, not
+  exploitability.
+- **What did the review catch?** A live open-proxy bug in my Cloudflare Worker (`//host/path` escaped the
+  configured origin), the early-stopping leak above, and event labels that would have counted a failed OSV
+  lookup as a burst of advisories. I verified each, fixed it, and added regression tests.

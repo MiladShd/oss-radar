@@ -181,3 +181,45 @@ def test_scoring_returns_probabilities_for_every_package_and_skips_thin_history(
     assert info["n_events"] >= 30 and info["features"]
     # too little history -> no number at all
     assert score_new_advisory_risk(snaps[snaps["snapshot_date"] < "2026-01-10"]) is None
+
+
+def test_osv_failure_and_recovery_do_not_create_false_events():
+    """ingest.osv returns vuln_count=0 on a failed lookup; recovery must not read as a burst of advisories."""
+    dates = pd.date_range("2026-01-01", periods=4)
+    snaps = pd.DataFrame({
+        "name": "a", "snapshot_date": dates, "vuln_count": [5, 0, 5, 186],
+        "source_status": ['{"osv": true}', '{"osv": false}', '{"osv": true}', '{"osv": true}'],
+    })
+    cp = build_counting_process(snaps)
+    # day 1 (5->0 failed) and day 2 (0->5 recovery) are unobserved; only 5 -> 186 on day 3 is real
+    assert list(cp["day"]) == [3]
+    assert list(cp["event"]) == [1]
+    # a +181 jump is ONE package-day event, not 181 advisories
+    assert int(cp["event"].sum()) == 1
+
+
+def test_missing_counts_are_unobserved_not_negative_labels():
+    dates = pd.date_range("2026-01-01", periods=3)
+    snaps = pd.DataFrame({"name": "a", "snapshot_date": dates, "vuln_count": [1.0, np.nan, 2.0]})
+    assert build_counting_process(snaps).empty
+
+
+def test_landmark_requires_complete_follow_up():
+    cp = build_counting_process(_simulate(n_packages=30, n_days=70, seed=11))
+    fit = fit_cox(cp[cp["day"] <= 40], VARYING)
+    full = landmark_evaluation(cp, fit, lambda r: fit.event_probability(r, 14),
+                               first_landmark=40, horizon_days=14)
+    # drop one package's rows inside the outcome windows: it must leave the evaluation, not become a 0
+    victim = cp["name"].iloc[0]
+    gapped = cp[~((cp["name"] == victim) & (cp["day"] > 45))]
+    partial = landmark_evaluation(gapped, fit, lambda r: fit.event_probability(r, 14),
+                                  first_landmark=40, horizon_days=14)
+    assert partial.n_rows < full.n_rows
+
+
+def test_likelihood_ratio_uses_the_unpenalised_likelihood():
+    cp = build_counting_process(_simulate(n_packages=40, n_days=60, seed=12))
+    fit = fit_cox(cp, VARYING, l2=0.5)
+    assert fit.log_likelihood_unpenalized > fit.log_likelihood  # the ridge term only subtracts
+    assert fit.log_likelihood_unpenalized == pytest.approx(
+        fit.log_likelihood + 0.5 * fit.l2 * float(fit.beta @ fit.beta))

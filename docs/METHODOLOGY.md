@@ -44,12 +44,14 @@ when absolute calibration is modest.
 
 ### Uncertainty: drift-aware conformal intervals
 
-Each growth forecast carries an 80% prediction interval. Textbook split conformal prediction covered only 58.5% of
-outcomes at an 80% target, because the model's error grows across forecast origins (MAE 0.096 → 0.221 over July),
-which breaks the exchangeability the guarantee needs. The shipped method combines recency-weighted conformal
-quantiles (Barber et al. 2023) with Adaptive Conformal Inference (Gibbs & Candès 2021) and reaches 75.8% / 87.4%
-forward-chained coverage at the 80% / 90% targets, with the limitations listed explicitly. Full derivation,
-results, and caveats: [CONFORMAL.md](CONFORMAL.md).
+Each growth forecast carries an 80% prediction interval. Textbook split conformal prediction covered only
+59.6% of outcomes at an 80% target, because the model's error grows across forecast origins (MAE
+0.120 → 0.234 over July), which breaks the exchangeability the guarantee needs. The shipped method combines
+recency-weighted conformal quantiles (Barber et al. 2023) with a clipped, batched adaptive-width update modelled
+on Adaptive Conformal Inference (Gibbs & Candès 2021) and reaches 76.6% / 88.4% forward-chained coverage
+at the 80% / 90% targets over seven scored dates. The adaptive update is a heuristic, not the published
+algorithm, and the limitations are listed explicitly. Full derivation, results, and caveats:
+[CONFORMAL.md](CONFORMAL.md).
 
 ## Risk model
 
@@ -135,10 +137,13 @@ the composite.
 
 Alongside the classifier, a Cox proportional-hazards model (implemented in NumPy and verified against an
 equivalent Poisson regression to 1e-14) estimates the chance each package gets a new security advisory within 14
-and 30 days. It is better **calibrated** than a fixed-horizon classifier (Brier 0.061 vs 0.112 at 14 days) because a
-calendar-time baseline hazard absorbs bulk-publication shocks. It does **not** rank better than advisory history
-alone, and its outcome is advisory disclosure, not exploitability. Shown beside, never inside, `risk_score`.
-Details, math and caveats: [SURVIVAL.md](SURVIVAL.md).
+and 30 days. Its forecasts are anchored to the *recent* event rate; that anchoring, not survival modelling by
+itself, is what stops probabilities being inflated by early bulk-publication shocks (a standard classifier and a
+whole-history survival baseline both forecast roughly 17 to 29% for an event that happened about 8% of the time).
+It had the lowest Brier score in every evaluated window, but it does **not** rank better than advisory history
+alone, no calibration-by-level or decision threshold has been validated, and its outcome is observed advisory
+arrival, not exploitability. Shown beside, never inside, `risk_score`. Details, math and caveats:
+[SURVIVAL.md](SURVIVAL.md).
 
 ## Champion / challenger
 
