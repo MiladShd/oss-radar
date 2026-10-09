@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 570" width="1100" height="570" role="img" aria-label="Flow diagram from public data sources to a daily Cloud Run job, BigQuery, models, dashboard and custom domain, with a CI and deploy path beneath." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>How OSS Radar fits together</title>
+<rect width="1100" height="570" fill="#fcfcfb" rx="14"/>
+<rect x="0.5" y="0.5" width="1099" height="569" fill="none" stroke="#cfcec8" rx="14"/>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">How OSS Radar fits together</text>
+<text x="40" y="82" font-size="15" fill="#52514e">A scheduled data and ML pipeline, a read-only dashboard, and a release path that is checked before it ships</text>
+<rect x="40" y="125" width="180" height="132" rx="10" fill="#f3f2ee" stroke="#cfcec8" stroke-width="1.5"/>
+<text x="130.0" y="155.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Public data</text>
+<text x="130.0" y="179.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >downloads · GitHub</text>
+<text x="130.0" y="198.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >vulnerabilities</text>
+<text x="130.0" y="217.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >security health</text>
+<text x="130.0" y="236.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >6 sources</text>
+<rect x="262" y="125" width="190" height="132" rx="10" fill="#e8f0fb" stroke="#2a78d6" stroke-width="1.5"/>
+<text x="357.0" y="155.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Daily job</text>
+<text x="357.0" y="179.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >Cloud Run + Scheduler</text>
+<text x="357.0" y="198.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >ingest · features</text>
+<text x="357.0" y="217.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >train · score</text>
+<text x="357.0" y="236.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >gate · report</text>
+<rect x="494" y="125" width="170" height="132" rx="10" fill="#f3f2ee" stroke="#cfcec8" stroke-width="1.5"/>
+<text x="579.0" y="155.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Warehouse</text>
+<text x="579.0" y="179.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >BigQuery</text>
+<text x="579.0" y="198.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >snapshots · history</text>
+<text x="579.0" y="217.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >predictions</text>
+<text x="579.0" y="236.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >model runs</text>
+<rect x="706" y="125" width="170" height="132" rx="10" fill="#e8f0fb" stroke="#2a78d6" stroke-width="1.5"/>
+<text x="791.0" y="155.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Models</text>
+<text x="791.0" y="179.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >LightGBM growth</text>
+<text x="791.0" y="198.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >+ conformal ranges</text>
+<text x="791.0" y="217.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >Cox survival</text>
+<text x="791.0" y="236.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >risk composite</text>
+<rect x="918" y="125" width="142" height="132" rx="10" fill="#f3f2ee" stroke="#cfcec8" stroke-width="1.5"/>
+<text x="989.0" y="155.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Dashboard</text>
+<text x="989.0" y="179.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >FastAPI</text>
+<text x="989.0" y="198.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >Cloud Run</text>
+<text x="989.0" y="217.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >read-only</text>
+<line x1="222.0" y1="191.0" x2="258.0" y2="191.0" stroke="#52514e" stroke-width="2"/>
+<line x1="258.0" y1="191.0" x2="249.0" y2="195.3" stroke="#52514e" stroke-width="2"/>
+<line x1="258.0" y1="191.0" x2="249.0" y2="186.7" stroke="#52514e" stroke-width="2"/>
+<line x1="454.0" y1="191.0" x2="490.0" y2="191.0" stroke="#52514e" stroke-width="2"/>
+<line x1="490.0" y1="191.0" x2="481.0" y2="195.3" stroke="#52514e" stroke-width="2"/>
+<line x1="490.0" y1="191.0" x2="481.0" y2="186.7" stroke="#52514e" stroke-width="2"/>
+<line x1="666.0" y1="191.0" x2="702.0" y2="191.0" stroke="#52514e" stroke-width="2"/>
+<line x1="702.0" y1="191.0" x2="693.0" y2="195.3" stroke="#52514e" stroke-width="2"/>
+<line x1="702.0" y1="191.0" x2="693.0" y2="186.7" stroke="#52514e" stroke-width="2"/>
+<line x1="878.0" y1="191.0" x2="914.0" y2="191.0" stroke="#52514e" stroke-width="2"/>
+<line x1="914.0" y1="191.0" x2="905.0" y2="195.3" stroke="#52514e" stroke-width="2"/>
+<line x1="914.0" y1="191.0" x2="905.0" y2="186.7" stroke="#52514e" stroke-width="2"/>
+<rect x="840" y="330" width="220" height="84" rx="10" fill="#fdf0ea" stroke="#eb6834" stroke-width="1.5"/>
+<text x="950.0" y="360.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >radar.miladblog.com</text>
+<text x="950.0" y="384.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >Cloudflare edge cache</text>
+<text x="950.0" y="403.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >Worker proxy</text>
+<line x1="989.0" y1="257.0" x2="989.0" y2="328.0" stroke="#52514e" stroke-width="2"/>
+<line x1="989.0" y1="328.0" x2="984.7" y2="319.0" stroke="#52514e" stroke-width="2"/>
+<line x1="989.0" y1="328.0" x2="993.3" y2="319.0" stroke="#52514e" stroke-width="2"/>
+<rect x="40" y="330" width="760" height="84" rx="10" fill="#f3f2ee" stroke="#cfcec8" stroke-width="1.5"/>
+<text x="420.0" y="360.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="middle" >Release path</text>
+<text x="420.0" y="384.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >pull request → lint + 211 tests (23 browser) + security scan → exact-commit image build → Cloud Run deploy</text>
+<text x="420.0" y="403.0" font-size="12.5" fill="#52514e" font-weight="400" text-anchor="middle" >infrastructure defined in Terraform</text>
+<text x="40.0" y="462.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >Only the daily job writes to the warehouse. The dashboard reads it, and a failure in the survival step cannot stop the run.</text>
+<text x="40.0" y="485.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >A retrained model must pass a validation gate before it serves; the previous champion keeps serving until it does.</text>
+<text x="40" y="548" font-size="12.5" fill="#7a7975">Source: OSS Radar repository (infra/terraform, .github/workflows, pipeline/, dashboard/).</text>
+</svg>

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="1100" height="620" role="img" aria-label="Two bar groups, 80 and 90 percent targets. Coverage improves from 58.5 to 75.8 percent at the 80 percent target and from 79.6 to 87.4 percent at the 90 percent target." font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Promised vs delivered: how often the real outcome fell inside the range</title>
+<rect width="1100" height="620" fill="#fcfcfb" rx="14"/>
+<rect x="0.5" y="0.5" width="1099" height="619" fill="none" stroke="#cfcec8" rx="14"/>
+<text x="40" y="52" font-size="26" font-weight="700" fill="#0b0b0b">Promised vs delivered: how often the real outcome fell inside the range</text>
+<text x="40" y="82" font-size="15" fill="#52514e">Share of outcomes inside the forecast range. The dashed line is what the range promised</text>
+<text x="330.0" y="202.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="end" >Textbook method, one calibration split</text>
+<text x="330.0" y="274.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="end" >Textbook method, tested on later dates</text>
+<text x="330.0" y="346.0" font-size="14" fill="#52514e" font-weight="400" text-anchor="end" >+ weight recent errors more</text>
+<text x="330.0" y="418.0" font-size="14" fill="#0b0b0b" font-weight="700" text-anchor="end" >+ self-correcting width (shipped)</text>
+<text x="350.0" y="148.0" font-size="18" fill="#0b0b0b" font-weight="700" text-anchor="start" >80% range</text>
+<line x1="350.0" y1="178.0" x2="350.0" y2="468.0" stroke="#cfcec8" stroke-width="1"/>
+<text x="350.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >0%</text>
+<line x1="425.0" y1="178.0" x2="425.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="425.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >25%</text>
+<line x1="500.0" y1="178.0" x2="500.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="500.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >50%</text>
+<line x1="575.0" y1="178.0" x2="575.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="575.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >75%</text>
+<line x1="650.0" y1="178.0" x2="650.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="650.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >100%</text>
+<rect x="350.0" y="185.0" width="175.4" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="515.4" y="206.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >58.5%</text>
+<rect x="350.0" y="257.0" width="201.1" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="541.1" y="278.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >67.0%</text>
+<rect x="350.0" y="329.0" width="214.3" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="554.3" y="350.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >71.4%</text>
+<rect x="350.0" y="401.0" width="227.5" height="30.0" fill="#2a78d6" rx="4"/>
+<text x="567.5" y="422.0" font-size="15" fill="#ffffff" font-weight="700" text-anchor="end" >75.8%</text>
+<line x1="590.0" y1="170.0" x2="590.0" y2="468.0" stroke="#0b0b0b" stroke-width="2" stroke-dasharray="6 5"/>
+<text x="590.0" y="166.0" font-size="13" fill="#0b0b0b" font-weight="700" text-anchor="middle" >promised 80%</text>
+<text x="740.0" y="148.0" font-size="18" fill="#0b0b0b" font-weight="700" text-anchor="start" >90% range</text>
+<line x1="740.0" y1="178.0" x2="740.0" y2="468.0" stroke="#cfcec8" stroke-width="1"/>
+<text x="740.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >0%</text>
+<line x1="815.0" y1="178.0" x2="815.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="815.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >25%</text>
+<line x1="890.0" y1="178.0" x2="890.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="890.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >50%</text>
+<line x1="965.0" y1="178.0" x2="965.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="965.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >75%</text>
+<line x1="1040.0" y1="178.0" x2="1040.0" y2="468.0" stroke="#ebeae5" stroke-width="1"/>
+<text x="1040.0" y="492.0" font-size="13" fill="#7a7975" font-weight="400" text-anchor="middle" >100%</text>
+<rect x="740.0" y="185.0" width="238.7" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="968.7" y="206.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >79.6%</text>
+<rect x="740.0" y="257.0" width="252.9" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="982.9" y="278.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >84.3%</text>
+<rect x="740.0" y="329.0" width="258.6" height="30.0" fill="#b9b8b2" rx="4"/>
+<text x="988.6" y="350.0" font-size="15" fill="#0b0b0b" font-weight="700" text-anchor="end" >86.2%</text>
+<rect x="740.0" y="401.0" width="262.3" height="30.0" fill="#2a78d6" rx="4"/>
+<text x="992.3" y="422.0" font-size="15" fill="#ffffff" font-weight="700" text-anchor="end" >87.4%</text>
+<line x1="1010.0" y1="170.0" x2="1010.0" y2="468.0" stroke="#0b0b0b" stroke-width="2" stroke-dasharray="6 5"/>
+<text x="1010.0" y="166.0" font-size="13" fill="#0b0b0b" font-weight="700" text-anchor="middle" >promised 90%</text>
+<text x="40.0" y="540.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >Self-correction closes most of the gap but not all of it, and the ranges are about 22% wider.</text>
+<text x="40.0" y="562.0" font-size="14.5" fill="#52514e" font-weight="400" text-anchor="start" >Only seven dates could be scored, so treat these as indicative until the first predictions mature (70 days).</text>
+<text x="40" y="598" font-size="12.5" fill="#7a7975">Source: OSS Radar, 3,094 supervised rows, forward-chained over 7 later forecast dates (637 rows); the first row uses one calibration split.</text>
+</svg>

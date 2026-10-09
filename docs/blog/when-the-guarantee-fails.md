@@ -10,6 +10,9 @@ I built [OSS Radar](https://radar.miladblog.com) to explore that gap. It's a per
 
 This post is about two upgrades that made its numbers trustworthy, and — more usefully — the two places where my first attempt was wrong.
 
+![OSS Radar dashboard overview showing 91 tracked packages, average momentum, high-risk count and per-source data health.](images/06-dashboard-overview.png)
+
+
 ## The problem with a confident number
 
 The dashboard originally said things like *"this package will grow 12% over 70 days."* One number, no range. If the real range is −20% to +45%, that precision is false, and a decision made on it is a gamble you didn't know you were taking.
@@ -22,11 +25,7 @@ I tested the promise on my own data. **It held 58.5% of the time.**
 
 Nothing was buggy. The technique assumes the future behaves like the past it was calibrated on, and mine didn't. The model's errors were getting bigger over time:
 
-| Forecast date | Typical error (log-growth) | Bias (actual − predicted) |
-|---|--:|--:|
-| 2 Jul | 0.096 | −0.036 |
-| 17 Jul | 0.157 | −0.120 |
-| 29 Jul | 0.221 | −0.191 |
+![Line chart: typical forecast error rises from 0.096 to 0.221 between 2 and 29 July, and the model's over-prediction rises from 0.036 to 0.191.](images/01-error-drift.png)
 
 Typical error more than doubled in four weeks, and it leaned one way: the model kept expecting more growth than materialised. I can't say why with certainty — slower summer download growth is a plausible candidate, but I didn't isolate it. What matters is the consequence: ranges sized from older, smaller errors were too narrow for the errors coming next.
 
@@ -41,11 +40,7 @@ Two changes, both standard in the research literature and simple to explain:
 
 Evaluated the honest way — each date predicted using only earlier dates:
 
-| Method | Covers (80% target) | Covers (90% target) | Range width (80%) |
-|---|--:|--:|--:|
-| Textbook method, expanding window | 67.0% | 84.3% | 0.336 |
-| + weight recent errors | 71.4% | 86.2% | 0.368 |
-| **+ self-correction (shipped)** | **75.8%** | **87.4%** | 0.410 |
+![Bar chart of how often outcomes fell inside the forecast range for four methods, against the 80 and 90 percent promises. The shipped method reaches 75.8 and 87.4 percent.](images/02-coverage.png)
 
 That's a real improvement and **not a fix**: ranges are 22% wider and still short of target. Here is why I'm not claiming more:
 
@@ -63,13 +58,15 @@ I rebuilt that question as a **time-to-event model** (survival analysis, the sam
 
 Three decisions made it trustworthy:
 
-- **Real events, checked.** 168 new-advisory events across 91 packages. I confirmed the advisory count only goes up (one decrease in 10,000+ package-days), so these are genuine disclosures, not data noise.
+- **Real events, checked.** 167 new-advisory events across 91 packages in the evaluation snapshot (168 today). I confirmed the advisory count only goes up (one decrease in 10,000+ package-days), so these are genuine disclosures, not data noise.
 - **Common shocks handled.** On three days in June and July, 21–26 packages each got new advisories at once, which looks like bulk publication. The model uses calendar time as its clock so those spikes don't get blamed on package features.
 - **No peeking.** Every input is as of the day *before* the thing being predicted.
 
 ### It beat the obvious alternative where it counts
 
 I compared it with the approach most teams would reach for: a standard classifier on the same inputs. Trained on the first 60–80 days, then forecasting later dates:
+
+![Grouped bars of predicted versus actual 14-day advisory rate for three training windows. The survival model predicts 6.6 to 7.3 percent; the classifier 17 to 29 percent; actual was 7.7 to 8.2 percent.](images/03-calibration.png)
 
 | 14-day forecast | Ranking skill (AUC) | Forecast error (Brier, lower is better) | Average predicted | Actually happened |
 |---|--:|--:|--:|--:|
@@ -85,9 +82,14 @@ One input — *how many advisories the package already has* — ranks packages *
 
 I'm reporting that because it changes what the model is for. If you only need a ranking, sort by advisory history. What the model adds is a **calibrated probability** you can act on, with honest uncertainty. Today, for example, it puts 9 of the 91 packages at 50% or higher for a new advisory within 30 days and 20 at 25% or higher, while the median package is around 10%.
 
+![Forest plot of six hazard ratios with 95 percent intervals. Advisory history is 2.39 times, recent advisories 1.22 times, days since release 0.75 times; downloads, scorecard and bus factor include 1.](images/04-hazard-ratios.png)
+
+
 And one result that cuts against a common instinct: **recently released packages gain advisories *faster***, not slower. My original risk score penalised "stale" packages. The data point the other way. The likely explanation is that active projects attract more scrutiny and disclosure, so this measures advisory *arrival*, not danger — but it's a good reminder to check that a heuristic encodes what you think it does.
 
 ## What made this trustworthy
+
+![Flow diagram: public data to a daily Cloud Run job, BigQuery warehouse, models, FastAPI dashboard and the radar.miladblog.com Cloudflare edge, with a pull request, test and deploy path beneath.](images/05-architecture.png)
 
 The parts of this work I'd defend in any engineering review:
 
@@ -99,7 +101,7 @@ The parts of this work I'd defend in any engineering review:
 
 ## Limits, and what's next
 
-This is a personal project on about 110 days of public data. 168 events is enough to estimate a few effects, not dozens; test windows contain only 14–45 positive cases, so expect the AUCs to wobble by around ±0.05. It predicts when advisories are *published*, not whether a package is exploitable.
+This is a personal project on about 110 days of public data. 167 events is enough to estimate a few effects, not dozens; test windows contain only 14–45 positive cases, so expect the AUCs to wobble by around ±0.05. It predicts when advisories are *published*, not whether a package is exploitable.
 
 Next: publish the measured coverage once the first predictions mature, model the 70-day delay explicitly, and separate "gets an advisory" from "goes stale" as competing events.
 
