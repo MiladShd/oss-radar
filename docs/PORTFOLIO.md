@@ -82,7 +82,7 @@ non-overlapping production cohorts.
 > vs 0.112 for a same-covariate logistic classifier, which scored worse than the base rate), while reporting
 > honestly that advisory history alone ranks slightly better (AUC 0.85 vs 0.82).
 
-> Built a 210-test automated suite (23 headless-Chromium Playwright tests plus API, statistical, and pipeline
+> Built a 211-test automated suite (23 headless-Chromium Playwright tests plus API, statistical, and pipeline
 > tests) that drives the live dashboard against a seeded warehouse: every tab, search/sort/category filters, the
 > package drawer, the dependency-audit form, conformal intervals reaching the UI, graceful no-interval states, and
 > a 375px mobile layout; wired into GitHub Actions so regressions block merges.
