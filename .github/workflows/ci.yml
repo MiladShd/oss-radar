@@ -81,5 +81,7 @@ jobs:
         run: python -m oss_radar.cli smoke --out "$RUNNER_TEMP/oss-radar-smoke"
       - name: Test pipeline
         run: pytest pipeline/tests -q
+      - name: Install Chromium for browser tests
+        run: python -m playwright install --with-deps chromium
       - name: Test dashboard
         run: pytest dashboard/tests -q

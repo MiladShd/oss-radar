@@ -19,6 +19,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from oss_radar.features import DOWNLOAD_FEATURES, GROWTH_TARGET_COLUMN
+from oss_radar.models.conformal import DriftAwareConformal
 from oss_radar.models.evaluation import (
     date_grouped_train_validation_test,
     growth_evaluation_provenance,
@@ -27,6 +28,11 @@ from oss_radar.models.evaluation import (
 _TARGET_MIN = -0.9
 _TARGET_MAX = 3.0
 _MAX_ESTIMATORS = 500
+# Nominal central-interval levels and the drift-aware conformal settings (docs/CONFORMAL.md).
+INTERVAL_LEVELS = (0.8, 0.9)
+_CONFORMAL_HALF_LIFE = 2.0
+_CONFORMAL_GAMMA = 0.2
+_CONFORMAL_WARMUP_DATES = 3
 
 
 @dataclass
@@ -36,6 +42,7 @@ class GrowthModel:
     metrics: dict = field(default_factory=dict)
     importances: dict = field(default_factory=dict)
     eval_provenance: dict = field(default_factory=dict)
+    conformal: dict = field(default_factory=dict)  # level (str) -> DriftAwareConformal.to_dict()
     seed: int = 42
     horizon_days: int = 70
 
@@ -107,6 +114,7 @@ class GrowthModel:
                 ((y_test_raw < _TARGET_MIN) | (y_test_raw > _TARGET_MAX)).mean()
             ),
         }
+        self._calibrate_intervals(tuning_model, validation, test)
         imp = self.model.booster_.feature_importance(importance_type="gain")
         total = imp.sum() or 1
         self.importances = {
@@ -114,6 +122,46 @@ class GrowthModel:
             for feature, value in zip(self.features, imp, strict=False)
         }
         return self.metrics
+
+    def _calibrate_intervals(
+        self, tuning_model: lgb.LGBMRegressor, validation: pd.DataFrame, test: pd.DataFrame
+    ) -> None:
+        """Calibrate drift-aware conformal intervals on genuinely out-of-sample residuals.
+
+        The train-only tuning model never saw the validation or test origins, so its absolute residuals
+        there are valid calibration scores; they are applied to the deployed (train+validation) model,
+        which can only be slightly better. Point-forecast test metrics above are unaffected.
+        """
+        self.conformal = {}
+        pool = pd.concat([validation, test], ignore_index=True)
+        dates = pd.to_datetime(pool["feature_date"]).dt.normalize()
+        date_index = pd.factorize(dates, sort=True)[0]
+        if date_index.max() + 1 <= _CONFORMAL_WARMUP_DATES:
+            return
+        actual = pool[GROWTH_TARGET_COLUMN].astype(float).to_numpy()
+        predicted = tuning_model.predict(pool[self.features].astype(float))
+        residuals = np.abs(actual - predicted)
+        for level in INTERVAL_LEVELS:
+            calibrator, evidence = DriftAwareConformal.calibrate(
+                residuals, date_index, alpha=round(1 - level, 4),
+                half_life=_CONFORMAL_HALF_LIFE, gamma=_CONFORMAL_GAMMA,
+                warmup_dates=_CONFORMAL_WARMUP_DATES,
+            )
+            tag = int(round(level * 100))
+            self.conformal[str(level)] = calibrator.to_dict()
+            self.metrics[f"conformal_coverage_{tag}"] = float(evidence.coverage)
+            self.metrics[f"conformal_width_{tag}"] = float(evidence.mean_width)
+        self.metrics["conformal_n_dates_scored"] = float(evidence.n_dates_scored)
+        self.metrics["conformal_n_calibration"] = float(len(residuals))
+
+    def predict_interval(
+        self, df: pd.DataFrame, level: float = 0.8
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Lower/upper log-growth bounds at ``level``, or None if intervals were not calibrated."""
+        blob = self.conformal.get(str(level))
+        if self.model is None or not blob:
+            return None
+        return DriftAwareConformal.from_dict(blob).interval(self.predict(df))
 
     def _new_model(self, n_estimators: int) -> lgb.LGBMRegressor:
         return lgb.LGBMRegressor(
@@ -173,7 +221,8 @@ class GrowthModel:
         joblib.dump(
             {"model": self.model, "features": self.features,
              "metrics": self.metrics, "importances": self.importances,
-             "eval_provenance": self.eval_provenance, "horizon_days": self.horizon_days},
+             "eval_provenance": self.eval_provenance, "horizon_days": self.horizon_days,
+             "conformal": self.conformal},
             path,
         )
 
@@ -183,4 +232,5 @@ class GrowthModel:
         return cls(features=blob["features"], model=blob["model"],
                    metrics=blob.get("metrics", {}), importances=blob.get("importances", {}),
                    eval_provenance=blob.get("eval_provenance", {}),
-                   horizon_days=blob.get("horizon_days", 70))
+                   horizon_days=blob.get("horizon_days", 70),
+                   conformal=blob.get("conformal", {}))

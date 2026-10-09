@@ -42,6 +42,15 @@ log-growth value; convert it to a conventional percent change with `100 * expm1(
 `momentum_score` is a bounded sigmoid of that log prediction (0 growth → 50), so it produces a stable ranking even
 when absolute calibration is modest.
 
+### Uncertainty: drift-aware conformal intervals
+
+Each growth forecast carries an 80% prediction interval. Textbook split conformal prediction covered only 55.6% of
+outcomes at an 80% target, because the model's error grows across forecast origins (MAE 0.104 → 0.230 over July),
+which breaks the exchangeability the guarantee needs. The shipped method combines recency-weighted conformal
+quantiles (Barber et al. 2023) with Adaptive Conformal Inference (Gibbs & Candès 2021) and reaches 76.6% / 87.8%
+forward-chained coverage at the 80% / 90% targets, with the limitations listed explicitly. Full derivation,
+results, and caveats: [CONFORMAL.md](CONFORMAL.md).
+
 ## Risk model
 
 OSS Radar reports risk two ways, deliberately:

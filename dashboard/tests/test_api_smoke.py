@@ -40,6 +40,8 @@ def _seed(path: str) -> DuckDBWarehouse:
     wh.insert_rows("predictions", [
         {"run_id": RUN_ID, "predicted_at": _NOW, "name": "vllm", "category": "llm",
          "momentum_score": 88.0, "risk_score": 21.0, "growth_pred_70d": 0.12,
+         "growth_pred_lo_70d": -0.05, "growth_pred_hi_70d": 0.30,
+         "momentum_score_lo": 46.0, "momentum_score_hi": 95.0, "interval_level": 0.8,
          "momentum_label": "high", "risk_level": "low",
          "momentum_reasons": ["downloads accelerating"],
          "risk_reasons": ["active maintenance"],
@@ -120,6 +122,15 @@ def client(tmp_path, monkeypatch):
         main._response_cache.clear()
         main._audit_limiter.clear()
         wh.close()
+
+
+def test_packages_api_exposes_conformal_interval(client):
+    rows = {r["name"]: r for r in client.get("/api/packages").json()}
+    assert rows["vllm"]["growth_pred_lo_70d"] == pytest.approx(-0.05)
+    assert rows["vllm"]["growth_pred_hi_70d"] == pytest.approx(0.30)
+    assert rows["vllm"]["interval_level"] == pytest.approx(0.8)
+    assert rows["vllm"]["growth_pred_lo_70d"] < rows["vllm"]["growth_pred_70d"] < rows["vllm"]["growth_pred_hi_70d"]
+    assert rows["langchain"].get("growth_pred_lo_70d") is None  # uncalibrated rows stay null
 
 
 def test_health(client, monkeypatch):

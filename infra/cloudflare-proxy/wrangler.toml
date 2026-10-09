@@ -1,0 +1,13 @@
+name = "oss-radar-proxy"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+workers_dev = false
+
+# radar.miladblog.com -> Cloud Run dashboard. The route needs a proxied (orange-cloud)
+# DNS record for the hostname; Cloudflare answers it, the origin is never contacted via DNS.
+routes = [
+  { pattern = "radar.miladblog.com/*", zone_name = "miladblog.com" }
+]
+
+[vars]
+ORIGIN = "https://oss-radar-dashboard-wzpckox4zq-uc.a.run.app"
