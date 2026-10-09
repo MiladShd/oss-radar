@@ -108,7 +108,10 @@ def test_failed_gate_blocks_promotion(tmp_path):
     champ, rows = reg.persist(_wh(tmp_path), "r1", "growth", _Stub(),
                               {"spearman": 0.9, "n_train": 100, "n_test": 20}, {}, gate_passed=False)
     assert champ is False
-    assert any("BLOCKED by validation gate" in r["notes"] for r in rows)
+    assert any("Blocked by the validation gate" in r["notes"] for r in rows)
+    # the note must not contradict itself: it says what accuracy alone would have done
+    assert any("would have been promoted" in r["notes"] for r in rows)
+    assert not any("BLOCKED" in r["notes"] or "promoted:" in r["notes"] for r in rows)
 
 
 def test_passed_gate_promotes_first_champion(tmp_path):
@@ -199,7 +202,7 @@ def test_registry_never_promotes_across_unmatched_cohorts(tmp_path):
     assert promoted is False
     primary = next(row for row in candidate_rows if row["metric_name"] == "spearman")
     assert primary["comparison_mode"] == "not-comparable"
-    assert "no matched incumbent evaluation" in primary["notes"]
+    assert "no fair comparison yet" in primary["notes"]
 
 
 def test_registry_can_compare_rescored_incumbent_on_current_cohort(tmp_path):
@@ -343,7 +346,7 @@ def test_new_evaluation_lineage_can_bootstrap_past_legacy_champion(tmp_path):
     assert promoted is True
     primary = next(row for row in candidate_rows if row["metric_name"] == "group_auc")
     assert primary["comparison_mode"] == "first-champion-in-lineage"
-    assert "first champion in evaluation lineage" in primary["notes"]
+    assert "first champion on this evaluation set" in primary["notes"]
 
 
 def test_risk_lineage_cannot_bootstrap_below_absolute_auc_floor(tmp_path):
@@ -368,7 +371,7 @@ def test_risk_lineage_cannot_bootstrap_below_absolute_auc_floor(tmp_path):
     assert promoted is False
     primary = next(row for row in rows if row["metric_name"] == "group_auc")
     assert primary["comparison_mode"] == "bootstrap-floor"
-    assert "absolute floor" in primary["notes"]
+    assert "below the minimum" in primary["notes"]
 
 
 def test_cloud_candidate_cannot_promote_without_durable_artifact(tmp_path, monkeypatch):
@@ -387,4 +390,4 @@ def test_cloud_candidate_cannot_promote_without_durable_artifact(tmp_path, monke
     assert promoted is False
     assert {row["gcs_uri"] for row in rows} == {""}
     assert {row["served_version"] for row in rows} == {""}
-    assert all("artifact persistence failure" in row["notes"] for row in rows)
+    assert all("could not be saved to storage" in row["notes"] for row in rows)

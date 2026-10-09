@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 import os
+import signal
 import time
 from datetime import UTC, datetime
 
+import pandas as pd
 import structlog
 
 from oss_radar.agents.crew import run_crew
@@ -45,6 +47,75 @@ def _git_sha() -> str:
         return "unknown"
 
 
+# A normal run takes about ten minutes and the Cloud Run job limit is thirty. A run still marked
+# ``running`` after this long was killed without a chance to record its outcome.
+ORPHANED_RUN_AFTER_HOURS = 3.0
+
+
+class PipelineInterrupted(Exception):
+    """The platform asked the process to stop (for example, the job timeout was reached)."""
+
+
+def _failure_counts(exc: Exception) -> dict:
+    counts: dict = {"error_type": type(exc).__name__}
+    if isinstance(exc, PipelineInterrupted):
+        counts["reason"] = (
+            "stopped by the platform before finishing, for example because the job timeout was reached"
+        )
+    return counts
+
+
+def _close_orphaned_runs(wh, current_run_id: str, now: datetime | None = None) -> int:
+    """Mark runs that were killed mid-flight as failed so health reporting reflects reality.
+
+    A hard kill (timeout, out-of-memory) leaves the run row as ``running`` forever. Closing it here,
+    at the start of the next run, keeps the history truthful without ever blocking the new run.
+    """
+    now = now or datetime.now(UTC)
+    try:
+        running = wh.query_df("SELECT * FROM pipeline_runs WHERE status = 'running'")
+    except Exception as exc:  # noqa: BLE001 - housekeeping must never block a run
+        log.warning("pipeline.orphan_scan_failed", error_type=type(exc).__name__)
+        return 0
+    closed = 0
+    for row in running.to_dict("records") if not running.empty else []:
+        run_id = row.get("run_id")
+        started = pd.to_datetime(row.get("started_at"), utc=True, errors="coerce")
+        if run_id == current_run_id or pd.isna(started):
+            continue
+        if (now - started.to_pydatetime()).total_seconds() < ORPHANED_RUN_AFTER_HOURS * 3600:
+            continue
+        try:
+            wh.upsert_rows("pipeline_runs", [{
+                "run_id": run_id,
+                "started_at": row.get("started_at"),
+                "finished_at": None,
+                "status": "failed",
+                "stages": row.get("stages") or {},
+                "counts": {
+                    "error_type": "OrphanedRun",
+                    "reason": "never reported completion; the job was probably stopped by a timeout",
+                },
+                "git_sha": row.get("git_sha"),
+            }], ["run_id"])
+            closed += 1
+            log.warning("pipeline.orphaned_run_closed", run_id=run_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("pipeline.orphan_close_failed", run_id=run_id, error_type=type(exc).__name__)
+    return closed
+
+
+def _install_sigterm_handler():
+    """Turn SIGTERM into an exception so the outer boundary can record the run as failed."""
+    def _raise(_signum, _frame):
+        raise PipelineInterrupted("received SIGTERM")
+
+    try:
+        return signal.signal(signal.SIGTERM, _raise)
+    except ValueError:  # not the main thread (for example, some test runners): nothing to install
+        return None
+
+
 def run_pipeline(
     settings: Settings | None = None,
     dry_run: bool = False,
@@ -69,6 +140,7 @@ def run_pipeline(
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     started = datetime.now(UTC)
     stages: dict[str, float] = {}
+    previous_handler = _install_sigterm_handler()
     try:
         return _execute_pipeline(settings, dry_run, source_mode, run_id, started, stages)
     except Exception as exc:
@@ -91,7 +163,7 @@ def run_pipeline(
                     "finished_at": datetime.now(UTC),
                     "status": "failed",
                     "stages": stages,
-                    "counts": {"error_type": type(exc).__name__},
+                    "counts": _failure_counts(exc),
                     "git_sha": _git_sha(),
                 }], ["run_id"])
         except Exception as record_exc:  # noqa: BLE001
@@ -106,6 +178,9 @@ def run_pipeline(
             error_type=type(exc).__name__,
         )
         raise
+    finally:
+        if previous_handler is not None:
+            signal.signal(signal.SIGTERM, previous_handler)
 
 
 def _execute_pipeline(
@@ -126,6 +201,7 @@ def _execute_pipeline(
 
     wh = get_warehouse(settings)
     wh.init_schema()
+    _close_orphaned_runs(wh, run_id)
     # Persist liveness before any network/model work. A hard crash leaves this row as ``running``
     # so the health API can surface the stuck execution instead of showing an older success.
     wh.upsert_rows("pipeline_runs", [{

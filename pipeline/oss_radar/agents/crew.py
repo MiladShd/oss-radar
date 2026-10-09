@@ -18,6 +18,15 @@ from oss_radar.agents import github_ops
 from oss_radar.agents.context import AgentContext
 from oss_radar.agents.improver import run_improver
 from oss_radar.source_health import github_recovery_guidance
+from oss_radar.textfmt import (
+    count,
+    join_and,
+    label_mode,
+    metric_label,
+    percent,
+    source_label,
+    version_label,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -59,12 +68,26 @@ def _data_engineer(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
     degraded = [s for s, r in rates.items() if 0 < r < SOURCE_HEALTH_THRESHOLD]
     status = "error" if down else "warning" if degraded else "ok"
     github_hint = github_recovery_guidance(is_cloud=_is_cloud(ctx.settings))
-    summary = (
-        f"Ingested {len(snapshots)} packages. Source success: "
-        + ", ".join(f"{s} {int(r*100)}%" for s, r in sorted(rates.items()))
-    ) or "No snapshots ingested."
+    if not len(snapshots):
+        summary = "No package snapshots were ingested in this run."
+    else:
+        per_source = ", ".join(f"{source_label(s)} {percent(r)}" for s, r in sorted(rates.items()))
+        if down:
+            problem = f"{join_and([source_label(s) for s in down])} returned no data"
+        elif degraded:
+            problem = (
+                f"{join_and([source_label(s) for s in degraded])} fell below the "
+                f"{percent(SOURCE_HEALTH_THRESHOLD)} health threshold"
+            )
+        else:
+            problem = ""
+        summary = (
+            f"Ingested {count(len(snapshots))} packages from {len(rates)} data sources. "
+            + (f"{problem[0].upper() + problem[1:]}. " if problem else "All sources are healthy. ")
+            + f"Success rate by source: {per_source}."
+        )
     if rates.get("github", 1.0) < SOURCE_HEALTH_THRESHOLD:
-        summary += f" GitHub source degraded. {github_hint}"
+        summary += f" {github_hint}"
     ctx.record("DataEngineer", "check_ingestion_freshness", status, summary)
 
     if down and not ctx.dry_run and ctx.settings.github_token:
@@ -83,7 +106,10 @@ def _data_engineer(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
             labels=["oss-radar", "data-incident"],
         )
         if url:
-            ctx.record("DataEngineer", "open_issue", "ok", f"Opened incident for {down}", url)
+            ctx.record(
+                "DataEngineer", "open_issue", "ok",
+                f"Opened a GitHub incident for the failing source(s): "
+                f"{join_and([source_label(s) for s in down])}.", url)
     return {
         "source_ok_rates": rates,
         "degraded_sources": sorted(down + degraded),
@@ -98,14 +124,15 @@ def _data_engineer(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
 # --- Healer: report on self-healing actions taken during ingest ---
 def _healer(ctx: AgentContext, heal_stats: dict | None) -> None:
     if not heal_stats or not heal_stats.get("failed"):
-        ctx.record("Healer", "self_heal_ingest", "ok", "All sources healthy — no healing needed.")
+        ctx.record("Healer", "self_heal_ingest", "ok", "All sources responded normally, so no self-healing was needed.")
         return
     s = heal_stats
     status = "ok" if s.get("recovered", 0) or s.get("carried_forward", 0) else "warning"
     ctx.record(
         "Healer", "self_heal_ingest", status,
-        f"{s['failed']} package(s) failed ingest; retried and recovered {s.get('recovered', 0)}, "
-        f"carried forward {s.get('carried_forward', 0)} from last good snapshot.",
+        f"{count(s['failed'])} package(s) failed during ingestion. "
+        f"{count(s.get('recovered', 0))} recovered after a retry and "
+        f"{count(s.get('carried_forward', 0))} were filled in from their last good snapshot.",
     )
 
 
@@ -118,9 +145,18 @@ def _data_quality(ctx: AgentContext, snapshots: pd.DataFrame) -> dict:
     key_cols = ["stars", "dependent_repos_count", "scorecard_overall", "bus_factor"]
     null_rates = {c: round(snapshots[c].isna().mean(), 3) for c in key_cols if c in snapshots}
     status = "ok" if (dupes == 0 and coverage >= 0.8) else "warning"
+    names = {"stars": "stars", "dependent_repos_count": "dependent repos",
+             "scorecard_overall": "OpenSSF scorecard", "bus_factor": "bus factor"}
+    verdict = (
+        "Feature table passed its checks"
+        if status == "ok"
+        else "Feature table needs attention"
+    )
     summary = (
-        f"{coverage*100:.0f}% download coverage, {dupes} duplicate(s). "
-        f"Null rates: " + ", ".join(f"{c} {int(r*100)}%" for c, r in null_rates.items())
+        f"{verdict}: {percent(coverage)} of packages have download data and "
+        f"{count(dupes)} duplicate package(s) were found. Missing-data rates: "
+        + ", ".join(f"{names.get(c, c)} {percent(r)}" for c, r in null_rates.items())
+        + "."
     )
     ctx.record("DataQuality", "validate_feature_table", status, summary)
     return {"coverage": coverage, "duplicates": dupes, "null_rates": null_rates}
@@ -131,36 +167,41 @@ def _data_scientist(ctx: AgentContext, model_metrics: dict) -> None:
     for name, m in model_metrics.items():
         primary = "spearman" if name == "growth" else "auc"
         val = m.get(primary)
-        val_str = f"{primary}={val:.3f}" if isinstance(val, (int, float)) and val == val else f"{primary}=n/a"
-        note = m.get("promotion_note") or ("promoted to champion" if m.get("is_champion") else "kept as challenger")
-        extra = f" · labels: {m['label_mode']}" if name == "risk" and m.get("label_mode") else ""
+        label = metric_label(primary)
+        val_str = f"{label} {val:.3f}" if isinstance(val, (int, float)) and val == val else f"{label} unavailable"
+        note = m.get("promotion_note") or (
+            "Promoted: it is now the champion." if m.get("is_champion") else "Kept as challenger."
+        )
         n_train = m.get("n_train") or m.get("n_samples")
         serving_metric = m.get(f"serving_{primary}")
-        serving_value = (f", served {primary}={serving_metric:.3f}"
+        serving_value = (f" ({label} {serving_metric:.3f})"
                          if isinstance(serving_metric, (int, float)) and serving_metric == serving_metric
                          else "")
+        labels = (f" Training labels: {label_mode(m['label_mode'])}."
+                  if name == "risk" and m.get("label_mode") else "")
         ctx.record(
             "DataScientist", f"retrain_{name}_model", "ok",
-            f"{name.title()} candidate retrained ({val_str}, n_train={n_train}); {note}. "
-            f"Serving {m.get('serving', 'unknown')}{serving_value}{extra}.",
+            f"Retrained the {name} model on {count(n_train)} rows ({val_str}). {note} "
+            f"The model in production is the one {version_label(m.get('serving'))}{serving_value}.{labels}",
         )
 
 
 def _model_monitor(ctx: AgentContext, drift: dict | None) -> None:
     if not drift or not drift.get("available"):
         ctx.record("DataScientist", "monitor_drift", "ok",
-                   "No prior run to compare — drift baseline established for next run.")
+                   "No earlier run to compare against, so this run becomes the baseline for drift checks.")
         return
     sev = drift.get("severity", "low")
     summary = (
-        f"Prediction drift vs prior run: {sev} "
-        f"(momentum PSI {drift.get('momentum_score_psi')}, risk PSI {drift.get('risk_score_psi')}, "
-        f"label churn {int(drift.get('label_churn', 0) * 100)}%)."
+        f"Prediction drift versus the previous run is {sev}: momentum PSI "
+        f"{drift.get('momentum_score_psi')}, risk PSI {drift.get('risk_score_psi')}, and "
+        f"{percent(drift.get('label_churn', 0))} of labels changed. "
+        "(PSI below 0.10 is stable; above 0.25 is significant.)"
     )
     ctx.record("DataScientist", "monitor_drift", "warning" if sev == "high" else "ok", summary)
     if sev == "high":
         ctx.record("DataScientist", "recommend_action", "warning",
-                   "Significant drift — flagged for feature review; next run will retrain from scratch.")
+                   "Significant drift detected and flagged for feature review. The models retrain on every run.")
         if not ctx.dry_run and ctx.settings.github_token:
             issue_body = summary + "\n\nRecommend reviewing input features and confirming the retrain."
             url = github_ops.open_or_comment_issue(
@@ -169,7 +210,7 @@ def _model_monitor(ctx: AgentContext, drift: dict | None) -> None:
                 body=issue_body,
                 labels=["oss-radar", "model-drift"])
             if url:
-                ctx.record("DataScientist", "track_issue", "ok", "Tracked drift investigation issue.", url)
+                ctx.record("DataScientist", "track_issue", "ok", "Opened or updated a GitHub issue to track the drift investigation.", url)
     elif sev == "low" and not ctx.dry_run and ctx.settings.github_token:
         closed = github_ops.close_open_issues(
             ctx.settings.github_token, ctx.settings.github_repo,
@@ -178,7 +219,7 @@ def _model_monitor(ctx: AgentContext, drift: dict | None) -> None:
         )
         if closed:
             ctx.record("DataScientist", "close_issue", "ok",
-                       f"Closed {len(closed)} recovered drift issue(s).", closed[0])
+                       f"Closed {len(closed)} drift issue(s) because drift returned to normal.", closed[0])
 
 
 # --- Risk Analyst: the daily human-readable report ---
@@ -299,7 +340,8 @@ def _risk_analyst(ctx: AgentContext, date_str: str, preds: pd.DataFrame,
             report += "\n_Generated by the OSS Radar agent crew._"
     src = "claude" if (ctx.llm.available and report is not template) else "template"
     ctx.record("RiskAnalyst", "write_daily_report", "ok",
-               f"Authored daily brief ({src}); {len(preds)} packages summarized.")
+               f"Wrote the daily brief {'with Claude-assisted prose' if src == 'claude' else 'from the standard template'}, "
+               f"covering {count(len(preds))} packages.")
     return report
 
 
@@ -308,11 +350,11 @@ def _mlops(ctx: AgentContext, date_str: str, report_md: str) -> str | None:
     path = Path("reports") / f"{date_str}.md"
     path.parent.mkdir(exist_ok=True)
     path.write_text(report_md)
-    ctx.record("MLOps", "publish_report", "ok", f"Wrote {path}", "")
+    ctx.record("MLOps", "publish_report", "ok", f"Saved the daily report to {path}.", "")
 
     if ctx.dry_run or not ctx.settings.github_token:
         ctx.record("MLOps", "open_pull_request", "skipped",
-                   "GitHub PR skipped (dry-run or no token).")
+                   "Skipped opening a pull request because this is a dry run or no GitHub token is set.")
         return None
     url = github_ops.open_daily_pr(
         ctx.settings.github_token, ctx.settings.github_repo,
@@ -323,7 +365,8 @@ def _mlops(ctx: AgentContext, date_str: str, report_md: str) -> str | None:
               "momentum/risk movers and what the agents did."),
     )
     ctx.record("MLOps", "open_pull_request", "ok" if url else "warning",
-               "Opened daily report PR." if url else "PR creation returned no URL.", url or "")
+               "Opened a pull request with the daily report." if url
+               else "Could not open the pull request: GitHub returned no URL.", url or "")
     return url
 
 

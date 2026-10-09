@@ -15,6 +15,7 @@ from pathlib import Path
 import structlog
 
 from oss_radar.config import Settings, get_settings
+from oss_radar.textfmt import metric_label
 from oss_radar.warehouse.base import Warehouse
 
 log = structlog.get_logger(__name__)
@@ -161,50 +162,63 @@ class ModelRegistry:
                 prev = None
 
         # Promote only on a genuine, comparable improvement (strict, beyond margin).
+        # Every branch sets a short verdict and the evidence behind it; the note reads as plain
+        # sentences because it is shown to people on the Model history tab and in the activity log.
+        label = metric_label(metric_name)
         if new_val is None or new_val != new_val:  # NaN -> not a valid champion candidate
             beats = False
-            note = f"not promoted: {metric_name} unavailable"
+            verdict, detail = "Not promoted", f"the {label} could not be computed for this candidate"
         elif prev is None and not has_compatible_champion:
             floor = BOOTSTRAP_FLOOR.get(model_name)
             beats = floor is None or new_val >= floor
             if beats:
-                note = f"first champion in evaluation lineage: {metric_name}={new_val:.3f}"
+                verdict = "Promoted"
+                detail = f"first champion on this evaluation set ({label} {new_val:.3f})"
                 comparison_mode = "first-champion-in-lineage"
             else:
-                note = (
-                    f"held bootstrap candidate: {metric_name}={new_val:.3f} "
-                    f"is below absolute floor {floor:.3f}"
+                verdict = "Held back"
+                detail = (
+                    f"{label} {new_val:.3f} is below the minimum of {floor:.3f} "
+                    "required for a first champion"
                 )
                 comparison_mode = "bootstrap-floor"
         elif prev is None:
             beats = False
             comparison_mode = "not-comparable"
-            benchmark_label = current_hash[:10] if current_hash else "unknown"
-            note = (
-                f"held challenger: current benchmark {benchmark_label} "
-                "has no matched incumbent evaluation"
+            verdict = "Held back"
+            detail = (
+                "no earlier model has been scored on this evaluation set, "
+                "so there is no fair comparison yet"
             )
         else:
             beats = (new_val > prev + margin) if higher_better else (new_val < prev - margin)
-            cmp = ">" if higher_better else "<"
-            note = (
-                f"promoted: {metric_name}={new_val:.3f} {cmp} prev best {prev:.3f}"
-                if beats
-                else f"held challenger: {metric_name}={new_val:.3f} did not beat best {prev:.3f}"
-            )
+            if beats:
+                verdict = "Promoted"
+                detail = f"{label} improved from {prev:.3f} to {new_val:.3f}"
+            else:
+                verdict = "Kept as challenger"
+                detail = f"{label} {new_val:.3f} did not beat the champion's {prev:.3f}"
             if matched_incumbent:
-                note += f"; incumbent {incumbent_version} re-scored on benchmark {current_hash[:10]}"
+                detail += " (the champion was re-scored on the same data for a like-for-like comparison)"
+        note = f"{verdict}: {detail}."
         # The hard validation gate applies to growth. Risk promotion is instead constrained by
         # its versioned package-disjoint metric lineage; do not imply the growth gate covers both.
         is_champion = beats
         if gate_passed is False:
             is_champion = False
-            note = f"BLOCKED by validation gate ({note})"
+            outcome = "would have been promoted" if beats else "would not have been promoted either"
+            note = (
+                "Blocked by the validation gate, a safeguard against data leakage and models that "
+                f"fail to generalize. On accuracy alone it {outcome} ({detail})."
+            )
         if self.settings.is_cloud and not gcs_uri:
             # A model that cannot survive this process cannot be a production champion. Keep its
             # metrics as a held candidate, but never serve or advertise an empty artifact URI.
             is_champion = False
-            note = f"BLOCKED by artifact persistence failure ({note})"
+            note = (
+                "Blocked because the model file could not be saved to storage, so it cannot be "
+                f"served. Accuracy check: {detail}."
+            )
         metrics["promotion_note"] = note
 
         self._mlflow_log(model_name, version, params, metrics, is_champion)
