@@ -151,7 +151,6 @@ def chart_coverage() -> Svg:
         shipped = key == "aci"
         s.text(330, 202 + i * 72, label, 14, INK if shipped else INK2, 700 if shipped else 400, "end")
     for tgt, gx0, name in panels:
-        gx1 = gx0 + pw
         s.text(gx0, 148, name, 18, INK, 700)
         for t in (0, 0.25, 0.5, 0.75, 1.0):
             gx = gx0 + pw * t
