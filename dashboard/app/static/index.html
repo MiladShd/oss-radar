@@ -137,9 +137,14 @@ tr.row:hover td{background:var(--panel2)}
 .health-green{color:#06281f;background:var(--teal)} .health-yellow{color:#2a1607;background:var(--amber)} .health-red{color:#2a0d12;background:var(--red)} .health-unknown{color:var(--muted);border:1px solid var(--line2)}
 .health-title{font-size:19px;font-weight:600}
 .sys-log{border-top:1px solid var(--line)}
-.sys-row{display:grid;grid-template-columns:92px 90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.sys-row{display:grid;grid-template-columns:92px 120px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
 .sys-row .src{font-family:var(--mono);color:var(--blue)}
 .sys-row .msg{color:var(--ink);line-height:1.45}
+.sys-row .detail{display:block;color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:3px;line-height:1.4}
+.legend{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.legend summary{cursor:pointer;color:var(--ink);font-weight:600;margin-bottom:6px}
+.legend p{margin:6px 0}
+.sys-filter{background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:8px;margin:6px 0 4px}
 .sys-row .ts{font-family:var(--mono);color:var(--muted);font-size:11px}
 .loading{color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px;text-align:center}
 .foot{margin-top:40px;color:var(--faint);font-family:var(--mono);font-size:11.5px;text-align:center;line-height:1.7}
@@ -210,30 +215,30 @@ tr.row:hover td{background:var(--panel2)}
   <!-- OVERVIEW -->
   <section data-view="overview">
     <div class="hero">
-      <h1>Which packages are gaining momentum — and which are becoming risky dependencies?</h1>
-      <p>A self-managing pipeline ingests downloads, GitHub activity, dependency graphs, vulnerabilities and security-health
-         metrics every day, then trains gradient-boosted models to forecast adoption momentum and dependency risk across the
-         Python&nbsp;/&nbsp;AI ecosystem. Seven deterministic operational roles validate each run, gate model promotion,
-         and publish the brief; Claude is optional and never participates in prediction.</p>
+      <h1>Which packages are gaining momentum, and which are risky to depend on?</h1>
+      <p>OSS Radar tracks Python and AI packages every day. It collects downloads, GitHub activity,
+         dependencies, vulnerabilities and security scores.</p>
+      <p>Two models forecast adoption momentum and dependency risk. Automated checks validate each run
+         before anything is published. Claude can polish the written brief, but it never makes predictions.</p>
       <div class="runbar" id="runbar"></div>
     </div>
     <div class="first-run" id="firstRun" hidden></div>
     <div class="kpis" id="kpis"></div>
     <div class="panel" style="margin-bottom:18px">
       <h3><span class="dot" style="background:var(--teal)"></span> Source health</h3>
-      <div class="sub">Latest per-source success rates; below 70% is degraded.</div>
-      <div id="sourceHealth"><div class="loading">scanning sources…</div></div>
+      <div class="sub">Latest success rate for each data source. Below 70% counts as degraded.</div>
+      <div id="sourceHealth"><div class="loading">Loading source health…</div></div>
     </div>
     <div class="grid2">
       <div class="panel">
         <h3><span class="dot" style="background:var(--teal)"></span> Momentum movers</h3>
-        <div class="sub">Highest forecast 70-day adoption momentum</div>
-        <div id="movers"><div class="loading">scanning…</div></div>
+        <div class="sub">Packages with the highest forecast 70-day adoption momentum.</div>
+        <div id="movers"><div class="loading">Loading…</div></div>
       </div>
       <div class="panel">
         <h3><span class="dot" style="background:var(--amber)"></span> Rising dependency risk</h3>
-        <div class="sub">Highest composite risk score</div>
-        <div id="risks"><div class="loading">scanning…</div></div>
+        <div class="sub">Packages with the highest composite risk score.</div>
+        <div id="risks"><div class="loading">Loading…</div></div>
       </div>
     </div>
   </section>
@@ -241,26 +246,30 @@ tr.row:hover td{background:var(--panel2)}
   <!-- SYSTEM -->
   <section data-view="system" hidden>
     <div class="hero"><h1 style="font-size:22px">System health</h1>
-      <p>Run history, error status, and the latest persisted pipeline and agent logs.</p></div>
-    <div id="sysBanner" class="health-banner"><div class="loading">checking system…</div></div>
+      <p>Is the daily pipeline running, and what did it do on its latest run?</p></div>
+    <div id="sysBanner" class="health-banner"><div class="loading">Checking system health…</div></div>
     <div class="kpis" id="sysKpis"></div>
     <div class="grid2">
       <div class="panel"><h3>Latest logs</h3>
-        <div class="sub" id="sysLogSub">pipeline and agent activity from the latest run</div>
-        <div id="sysLogs"><div class="loading">loading logs…</div></div></div>
+        <div class="sub" id="sysLogSub">Pipeline stages and agent activity from the latest run.</div>
+        <select id="sysLevel" class="sys-filter" aria-label="Filter log by severity">
+          <option value="all">All activity</option>
+          <option value="attention">Warnings and errors only</option>
+        </select>
+        <div id="sysLogs"><div class="loading">Loading logs…</div></div></div>
       <div class="panel"><h3>Issues</h3>
-        <div class="sub">errors and warnings across recent runs</div>
-        <div id="sysIssues"><div class="loading">checking issues…</div></div></div>
+        <div class="sub">Problems found across recent runs.</div>
+        <div id="sysIssues"><div class="loading">Checking for issues…</div></div></div>
     </div>
     <div class="panel" style="margin-top:18px;padding:6px 14px"><table>
-      <thead><tr><th>Run</th><th>Status</th><th class="num">Duration</th><th class="num">Packages</th><th class="num">Predictions</th><th>Git SHA</th></tr></thead>
+      <thead><tr><th>Run</th><th>Status</th><th class="num">Duration</th><th class="num">Packages</th><th class="num">Predictions</th><th>Code version</th></tr></thead>
       <tbody id="sysRuns"></tbody></table></div>
   </section>
 
   <!-- PACKAGES -->
   <section data-view="packages" hidden>
     <div class="hero"><h1 style="font-size:22px">Package leaderboard</h1>
-      <p>Click any row for the full signal breakdown, download trajectory and model reasoning.</p></div>
+      <p>Select a package to see its signals, download history and the reasons behind its scores.</p></div>
     <div class="toolbar">
       <input id="search" placeholder="filter packages…  e.g. vllm, langchain, vector" />
       <select id="catf"><option value="">all categories</option></select>
@@ -268,85 +277,88 @@ tr.row:hover td{background:var(--panel2)}
     <div class="panel" style="padding:6px 14px"><table id="ptable">
       <thead><tr>
         <th data-s="name">Package</th><th data-s="category">Category</th>
-        <th data-s="momentum_score" class="num">Momentum</th><th data-s="risk_score" class="num">Risk</th>
-        <th data-s="growth_pred_70d" class="num">Δ70d</th><th data-s="stars" class="num">Stars</th>
+        <th data-s="momentum_score" class="num" title="0 to 100. Higher means faster forecast adoption growth.">Momentum (0–100)</th><th data-s="risk_score" class="num" title="0 to 100. Higher means riskier to depend on. Under 40 is low, 66 and above is high.">Risk (0–100)</th>
+        <th data-s="growth_pred_70d" class="num" title="Forecast change in downloads over the next 70 days. Hover a value for its 80% range.">Forecast 70-day change</th><th data-s="stars" class="num">Stars</th>
         <th data-s="dependent_repos_count" class="num">Dependents</th><th data-s="vuln_count" class="num">Vulns</th>
       </tr></thead><tbody id="pbody"></tbody></table></div>
   </section>
 
   <!-- MODELS -->
   <section data-view="models" hidden>
-    <div class="hero"><h1 style="font-size:22px">Model improvement over time</h1>
-      <p>Every daily run evaluates growth and risk challengers against fixed, time-aware evidence. Quality can move up or
-         down; only a challenger that clears the validation gate and beats the current champion is promoted. This chart is
-         the audit trail, not a promise of monotonic improvement.</p></div>
+    <div class="hero"><h1 style="font-size:22px">Model quality over time</h1>
+      <p>Each day's run tests new growth and risk models on fixed, time-aware data. A new model replaces the
+         current champion only if it passes the validation gate and scores higher.</p>
+      <p>Scores can fall as well as rise. This chart is the record of what happened, not a promise of steady improvement.</p></div>
     <div class="panel"><h3>Held-out metric history</h3>
-      <div class="sub">Growth model: Spearman rank correlation · Risk model: ROC-AUC · ◆ = promoted to champion</div>
+      <div class="sub">Growth model: Spearman rank correlation. Risk model: AUC. A ◆ marks a model that became champion.</div>
       <canvas id="mchart" height="110"></canvas></div>
     <div class="panel" style="margin-top:18px;padding:6px 14px"><table>
-      <thead><tr><th>Run</th><th>Model</th><th>Version</th><th class="num">Metric</th><th class="num">n_train</th><th>Champion</th></tr></thead>
+      <thead><tr><th>Run</th><th>Model</th><th>Version</th><th class="num">Metric</th><th class="num">Training rows</th><th>Champion</th></tr></thead>
       <tbody id="mbody"></tbody></table></div>
   </section>
 
   <!-- ACCURACY -->
   <section data-view="accuracy" hidden>
-    <div class="hero"><h1 style="font-size:22px">Model accuracy — predicted vs reality</h1>
-      <p>The growth model graded on a <b>time-aware held-out test</b>, recomputed every run. This is a
-         <b>cross-sectional ranking</b> — Spearman is the metric that matters; the absolute R² is leak-sensitive. See the
-         <a href="#" onclick="tab('validation');return false" style="color:var(--teal)">Validation</a> tab for the
-         honest, leak-free numbers and confidence intervals.</p></div>
+    <div class="hero"><h1 style="font-size:22px">Model accuracy: predicted versus actual</h1>
+      <p>The growth model is graded on <b>held-out data that comes later in time</b> than its training data.
+         The scores are recomputed every run.</p>
+      <p>The metric that matters is <b>Spearman rank correlation</b>, because the model ranks packages
+         rather than predicting exact values. Raw R² is sensitive to data leaks. The
+         <a href="#" onclick="tab('validation');return false" style="color:var(--teal)">Validation</a> tab
+         has the leak-free numbers and confidence intervals.</p></div>
     <div class="kpis" id="btkpis"></div>
-    <div class="panel"><h3>Calibration — predicted-growth decile vs realized</h3>
-      <div class="sub">Bars = what actually happened · line = what the model predicted. Bars rising left→right means the ranking holds.</div>
+    <div class="panel"><h3>Calibration: predicted growth decile versus actual</h3>
+      <div class="sub">Bars show what actually happened. The line shows what the model predicted. Bars that rise from left to right mean the ranking holds.</div>
       <div style="height:240px;position:relative"><canvas id="btCalib"></canvas></div></div>
     <div class="grid2" style="margin-top:18px">
       <div class="panel"><h3>Predicted vs actual</h3>
-        <div class="sub">each point = one held-out package-day · dashed line = perfect prediction</div>
+        <div class="sub">Each point is one held-out package on one day. The dashed line marks a perfect prediction.</div>
         <div style="height:240px;position:relative"><canvas id="btScatter"></canvas></div></div>
       <div class="panel"><h3>Risk model ROC</h3>
-        <div class="sub" id="btRocSub">true-positive vs false-positive rate</div>
+        <div class="sub" id="btRocSub">True-positive rate against false-positive rate.</div>
         <div style="height:240px;position:relative"><canvas id="btRoc"></canvas></div></div>
     </div>
   </section>
 
   <!-- VALIDATION -->
   <section data-view="validation" hidden>
-    <div class="hero"><h1 style="font-size:22px">Validation — does the R² claim survive scrutiny?</h1>
-      <p>A statistical harness plus a 12-agent LLM statistician panel stress-tested the headline and found two data
-         leaks and a strawman baseline. Honest verdict: a <b>cross-sectional ranked momentum watchlist</b>, not a
-         time-forward forecast. <a id="valdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Full report →</a></p></div>
+    <div class="hero"><h1 style="font-size:22px">Validation: does the headline R² hold up?</h1>
+      <p>A statistical test harness and a panel of 12 LLM reviewers checked the headline result.
+         They found two data leaks and a baseline that was too easy to beat.</p>
+      <p>The honest verdict: this is a <b>ranked momentum watchlist</b>, not a forecast of future growth.
+         <a id="valdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Full report →</a></p></div>
     <div class="kpis" id="valkpis"></div>
-    <div class="panel"><h3>The number, at four levels of honesty</h3>
-      <div class="sub">Each leak or strawman removed lowers the held-out R². The honest skill is the unseen-package bar.</div>
+    <div class="panel"><h3>One number, four levels of honesty</h3>
+      <div class="sub">Each leak or weak baseline we remove lowers the held-out R². The unseen-package bar is the honest measure.</div>
       <div style="height:240px;position:relative"><canvas id="valHier"></canvas></div></div>
     <div class="grid2" style="margin-top:18px">
-      <div class="panel"><h3>Why it's cross-sectional, not a forecast</h3>
+      <div class="panel"><h3>Why this ranks packages instead of forecasting them</h3>
         <div class="sub" id="valCaveat">…</div></div>
-      <div class="panel"><h3>How we know — no number trusted until reproduced</h3>
+      <div class="panel"><h3>How we check: no number is trusted until it is reproduced</h3>
         <div class="sub" id="valMethod">…</div></div>
     </div>
     <div class="panel" style="margin-top:18px">
-      <h3>Live derivation — every number recomputed from scratch in the Wolfram Language</h3>
+      <h3>Live derivation: every number recomputed in the Wolfram Language</h3>
       <div class="wl-meta" id="wlMeta"></div>
-      <div class="sub" style="margin-bottom:14px">An independent <b>third</b> reproduction (NumPy harness → 12-agent LLM panel → Wolfram Engine): the held-out predictions, re-derived step by step and cross-checked against the Python harness to &lt;1e-6. Scroll a card to watch it compute.</div>
+      <div class="sub" style="margin-bottom:14px">This is the <b>third</b> independent reproduction, after the NumPy harness and the LLM panel. Wolfram Engine re-derives the held-out predictions step by step. Its results match the Python harness to within 1e-6. Scroll a card to watch it compute.</div>
       <div class="wl-grid" id="wlSteps"></div>
     </div>
   </section>
 
   <!-- TIME SERIES (nav hidden until validated) -->
   <section data-view="timeseries" hidden>
-    <div class="hero"><h1 style="font-size:22px">Time-series analysis — the daily series, by the book</h1>
-      <p>Unlike the cross-sectional growth model, the <b>daily download series</b> supports proper time-series work:
-         every assumption is hypothesis-tested, and short-horizon forecasts are <b>rolling-origin validated</b>.
+    <div class="hero"><h1 style="font-size:22px">Time-series analysis of daily downloads</h1>
+      <p>Unlike the growth model, the <b>daily download series</b> supports proper time-series methods.
+         Every assumption is statistically tested. Short-horizon forecasts are checked on <b>rolling origins</b>.
          <a id="tsdoc" href="#" target="_blank" rel="noopener" style="color:var(--teal)">Harness →</a></p></div>
     <div class="kpis" id="tskpis"></div>
     <div class="panel"><h3>Assumption tests (91 series)</h3>
-      <div class="sub">Each property is hypothesis-tested. The series violate iid/stationarity — which is exactly why
-        differencing and a seasonal model are required.</div>
+      <div class="sub">Each property is tested. The series are neither independent nor stationary,
+        so differencing and a seasonal model are required.</div>
       <div id="tsDiag" style="margin-top:10px"></div></div>
     <div class="grid2" style="margin-top:18px">
-      <div class="panel"><h3>Forecast accuracy — MASE (lower is better; 1.0 = no better than naive)</h3>
-        <div class="sub">Rolling-origin, expanding window, 18 volume-stratified packages. ETS beats the baselines at 1 day; skill fades by 7.</div>
+      <div class="panel"><h3>Forecast error (MASE): lower is better</h3>
+        <div class="sub">A score of 1.0 means no better than a naive forecast. Tested on 18 packages spread across download volumes. ETS beats the baselines at one day, and its edge fades by seven.</div>
         <div style="height:240px;position:relative"><canvas id="tsMase"></canvas></div></div>
       <div class="panel"><h3>Is the model adequate?</h3>
         <div class="sub" id="tsResid">…</div></div>
@@ -356,12 +368,12 @@ tr.row:hover td{background:var(--panel2)}
   <!-- AUDIT -->
   <section data-view="audit" hidden>
     <div class="hero"><h1 style="font-size:22px">Dependency risk audit</h1>
-      <p>Paste your <code>requirements.txt</code> — get a supply-chain risk report on <b>your</b> dependencies:
-         version-aware vulnerabilities, maintenance risk, release staleness, and adoption trend. Watchlist
-         packages are instant; anything else is fetched live from the same sources.</p></div>
+      <p>Paste your <code>requirements.txt</code> to get a supply-chain risk report on <b>your</b> dependencies.
+         It covers vulnerabilities in the exact versions you pin, maintenance, release age and adoption trend.</p>
+      <p>Watchlist packages return instantly. Anything else is fetched live from the same sources.</p></div>
     <div class="grid2" style="align-items:start">
       <div class="panel"><h3>Your dependencies</h3>
-        <div class="sub">Pinned <code>==x.y.z</code> versions get an <b>active</b>-CVE check. Or paste a GitHub repo URL.</div>
+        <div class="sub">Pinned versions (<code>==x.y.z</code>) are checked against <b>active</b> CVEs. You can also paste a GitHub repo URL.</div>
         <textarea id="auditIn" rows="9" spellcheck="false" placeholder="transformers==4.30.0
 langchain
 fastapi==0.100.0
@@ -376,11 +388,12 @@ or: openai/openai-python" style="width:100%;background:var(--bg);border:1px soli
 
   <!-- AGENTS -->
   <section data-view="agents" hidden>
-    <div class="hero"><h1 style="font-size:22px">What the operational agents did</h1>
-      <p>Seven role-scoped, deterministic agents manage the pipeline each day — they do not make predictions. They check
-         ingestion freshness, validate data quality, retrain and gate models, write the brief, and open the daily PR.
-         Claude may rewrite brief prose when configured; the data and scores remain deterministic.</p></div>
-    <div class="panel"><div id="timeline"><div class="loading">loading activity…</div></div></div>
+    <div class="hero"><h1 style="font-size:22px">What the automated agents did</h1>
+      <p>Seven role-based agents run the pipeline each day. They check data freshness and quality,
+         retrain and gate the models, write the daily brief and open its pull request.</p>
+      <p>They never make predictions. If Claude is configured, it can polish the brief's wording.
+         The data and scores stay deterministic.</p></div>
+    <div class="panel"><div id="timeline"><div class="loading">Loading activity…</div></div></div>
   </section>
 
   <div class="foot" id="foot"></div>
@@ -458,9 +471,9 @@ async function loadOverview(){
   const lr=o.last_run||{};
   const cnt=lr.counts? (typeof lr.counts==="string"?JSON.parse(lr.counts):lr.counts):{};
   $("#runbar").innerHTML=[
-    `<div class="pill">last run <b class="mono">${lr.run_id||"—"}</b></div>`,
-    `<div class="pill"><span class="${lr.status==='success'?'ok':'warn'}">●</span> ${lr.status||"no runs yet"}</div>`,
-    `<div class="pill">${cnt.packages??o.tracked??0} packages</div>`,
+    `<div class="pill" title="${esc(lr.run_id||"")}">Last run <b class="mono">${lr.run_id?niceDate(lr.run_id):"none yet"}</b></div>`,
+    `<div class="pill"><span class="${lr.status==='success'?'ok':'warn'}">●</span> ${lr.status?statusLabel(lr.status):"No runs yet"}</div>`,
+    `<div class="pill">${cnt.packages??o.tracked??0} packages tracked</div>`,
     `<div class="pill">${cnt.predictions??0} scored</div>`
   ].join("");
   $("#kpis").innerHTML=[
@@ -471,50 +484,88 @@ async function loadOverview(){
   ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
   const sourceRows=o.source_health||[];
   $("#sourceHealth").innerHTML=sourceRows.length?`<table><thead><tr><th>Source</th><th class="num">Success</th><th>Status</th></tr></thead>
-    <tbody>${sourceRows.map(s=>`<tr><td class="mono">${esc(s.source)}</td><td class="num">${Math.round((s.success_rate||0)*100)}%</td>
+    <tbody>${sourceRows.map(s=>`<tr><td>${esc(srcLabel(s.source))}</td><td class="num">${Math.round((s.success_rate||0)*100)}%</td>
       <td><span class="dot" style="background:${healthDot(s.status)}"></span> ${esc(s.status)}
       ${s.guidance?`<div class="sub">${esc(s.guidance)}</div>`:""}</td></tr>`).join("")}</tbody></table>`
     :"<div class='loading'>no source status recorded yet</div>";
-  $("#movers").innerHTML=(o.movers||[]).map(p=>moverRow(p,"momentum_score",momColor,"momentum_label")).join("")||"<div class='loading'>run the pipeline to populate</div>";
-  $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>run the pipeline to populate</div>";
+  $("#movers").innerHTML=(o.movers||[]).map(p=>moverRow(p,"momentum_score",momColor,"momentum_label")).join("")||"<div class='loading'>No data yet. Run the pipeline to fill this list.</div>";
+  $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>No data yet. Run the pipeline to fill this list.</div>";
 }
 
+let SYS_LOGS=[];
+function renderSysLogs(){
+  const only=($("#sysLevel")||{}).value==="attention";
+  const rows=SYS_LOGS.filter(l=>!only||["warning","error"].includes(String(l.level).toLowerCase()));
+  $("#sysLogs").innerHTML=rows.length?`<div class="sys-log">${rows.map(l=>`<div class="sys-row">
+    <div class="ts">${shortTs(l.ts)}</div>
+    <div class="src"><span class="dot" style="background:${healthDot(l.level)}"></span> ${esc(l.source)}</div>
+    <div class="msg">${esc(l.message)}${l.detail?`<span class="detail">${esc(l.detail)}</span>`:""}</div>
+  </div>`).join("")}</div>`:`<div class='loading'>${only?"No warnings or errors in the latest run.":"No logs yet."}</div>`;
+}
 function healthClass(s){return s==="green"?"health-green":s==="yellow"?"health-yellow":s==="red"?"health-red":"health-unknown";}
-function healthDot(s){return s==="green"||s==="ok"||s==="success"||s==="healthy"?"var(--teal)":s==="yellow"||s==="warning"||s==="degraded"?"var(--amber)":s==="red"||s==="error"||s==="down"?"var(--red)":"var(--faint)";}
-function dur(sec){return sec==null?"—":sec<60?sec.toFixed(1)+"s":(sec/60).toFixed(1)+"m";}
+function healthDot(s){return s==="green"||s==="ok"||s==="success"||s==="healthy"?"var(--teal)":s==="yellow"||s==="warning"||s==="degraded"?"var(--amber)":s==="red"||s==="error"||s==="down"?"var(--red)":s==="info"||s==="interrupted"?"var(--blue)":"var(--faint)";}
+function dur(sec){
+  if(sec==null||isNaN(sec))return "—";
+  if(sec<1)return "under 1 s";
+  if(sec<60)return Math.round(sec)+" s";
+  const m=Math.floor(Math.round(sec)/60), r=Math.round(sec)%60;
+  return r?`${m} min ${r} s`:`${m} min`;
+}
 function shortTs(ts){return ts?String(ts).replace("T"," ").replace("Z","").slice(0,16):"—";}
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function niceDate(v){ /* "20261008…" run id, or an ISO timestamp -> "8 Oct 2026" */
+  const m=String(v||"").match(/^(\d{4})-?(\d{2})-?(\d{2})/);
+  return m?`${parseInt(m[3],10)} ${MONTHS[parseInt(m[2],10)-1]} ${m[1]}`:String(v||"—");
+}
+function niceDateTime(ts){return ts?`${niceDate(ts)}, ${String(ts).slice(11,16)} UTC`:"—";}
+const riskBand=v=>v==null?"":v>=66?"high":v>=40?"medium":"low";
+const riskCell=v=>v==null?"\u2014":`<b>${Math.round(v)}</b><small style="color:var(--muted)"> / 100 \u00b7 ${riskBand(v)}</small>`;
+function sinceRelease(days){
+  if(days==null)return "\u2014";
+  if(days<1)return "today";
+  if(days<2)return "yesterday";
+  if(days<60)return `${days} days ago`;
+  if(days<730)return `${Math.round(days/30)} months ago`;
+  return `${Math.round(days/365)} years ago`;
+}
+const sentence=t=>{t=String(t||"").trim();return t?t.charAt(0).toUpperCase()+t.slice(1)+(/[.!?]$/.test(t)?"":"."):"";};
+const SRC_LABEL={depsdev:"deps.dev",ecosystems_pkg:"ecosyste.ms packages",ecosystems_repo:"ecosyste.ms repositories",github:"GitHub",osv:"OSV",pypi_downloads:"PyPI downloads",pypi_metadata:"PyPI metadata"};
+const srcLabel=s=>SRC_LABEL[s]||String(s||"").replace(/_/g," ");
+const HEALTH_LABEL={green:"Healthy",yellow:"Degraded",red:"Needs attention",unknown:"Unknown"};
+const STATUS_LABEL={running:"In progress",interrupted:"Interrupted",stale:"Stale",warning:"Warning",error:"Error",ok:"OK",success:"Succeeded",failed:"Failed",info:"Note"};
+const statusLabel=s=>STATUS_LABEL[s]||String(s||"unknown");
+const agentLabel=a=>String(a||"Agent").replace(/([a-z])([A-Z])/g,"$1 $2");
+const ACTION_LABEL={check_ingestion_freshness:"Checked ingestion freshness",self_heal_ingest:"Ran the self-healing check",validate_feature_table:"Validated the feature table",retrain_growth_model:"Retrained the growth model",retrain_risk_model:"Retrained the risk model",monitor_drift:"Checked prediction drift",recommend_action:"Recommended an action",track_issue:"Tracked an issue",close_issue:"Closed an issue",open_issue:"Opened an incident",write_daily_report:"Wrote the daily brief",publish_report:"Saved the daily report",open_pull_request:"Opened a pull request",feature_experiment:"Tested candidate features",propose_feature:"Considered a new feature"};
+const actionLabel=a=>ACTION_LABEL[a]||String(a||"").replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
 
 async function loadSystem(){
   const h=await j("/api/system-health");
   const st=h.status||"unknown", latest=h.latest_run||{}, latestCounts=latest.counts||{};
-  $("#sysBanner").innerHTML=`<span class="health-badge ${healthClass(st)}">${esc(st)}</span>
-    <div><div class="health-title">${esc(h.headline||"system health unavailable")}</div>
-    <div class="mono" style="font-size:12px;color:var(--muted);margin-top:3px">latest run ${esc(latest.run_id||"—")} · ${shortTs(latest.finished_at||latest.started_at)}</div></div>`;
+  $("#sysBanner").innerHTML=`<span class="health-badge ${healthClass(st)}">${esc(HEALTH_LABEL[st]||st)}</span>
+    <div><div class="health-title">${esc(h.headline||"System health is unavailable.")}</div>
+    <div class="mono" style="font-size:12px;color:var(--muted);margin-top:3px">Latest run finished ${esc(niceDateTime(latest.finished_at||latest.started_at))} · ${esc(latest.run_id||"no run id")}</div></div>`;
   $("#sysKpis").innerHTML=[
-    ["days run",h.run_days??0,""],
-    ["total runs",h.total_runs??0,""],
-    ["errors",h.error_count??0,""],
-    ["warnings",h.warning_count??0,""],
+    ["Days with runs",h.run_days??0,""],
+    ["Runs on record",h.total_runs??0,""],
+    ["Open issues",h.error_count??0,""],
+    ["Warnings",h.warning_count??0,""],
   ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
-  $("#sysLogSub").textContent=st==="green"?"green logs from the latest successful run":"latest persisted pipeline and agent logs";
-  const logRows=h.logs||[];
-  $("#sysLogs").innerHTML=logRows.length?`<div class="sys-log">${logRows.map(l=>`<div class="sys-row">
-    <div class="ts">${shortTs(l.ts)}</div>
-    <div class="src"><span class="dot" style="background:${healthDot(l.level)}"></span> ${esc(l.source)}</div>
-    <div class="msg">${esc(l.message)}</div>
-  </div>`).join("")}</div>`:"<div class='loading'>no logs yet</div>";
+  $("#sysLogSub").textContent=st==="green"?"Pipeline stages and agent activity from the latest run, oldest first.":"Latest run, oldest first. Check the Issues panel for anything that needs attention.";
+  SYS_LOGS=h.logs||[];
+  renderSysLogs();
+  const levelSel=$("#sysLevel"); if(levelSel) levelSel.onchange=renderSysLogs;
   const issueRows=[...(h.issues||[]),...(h.warnings||[])];
   $("#sysIssues").innerHTML=issueRows.length?`<div class="sys-log">${issueRows.map(i=>`<div class="sys-row">
     <div class="ts">${shortTs(i.ts)}</div>
     <div class="src"><span class="dot" style="background:${healthDot(i.status)}"></span> ${esc(i.source)}</div>
-    <div class="msg"><b>${esc(i.status)}</b> · ${esc(i.summary)}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(i.run_id||"")}</span></div>
-  </div>`).join("")}</div>`:`<div class="loading" style="color:var(--teal)">green — no persisted errors or warnings</div>`;
+    <div class="msg"><b>${esc(statusLabel(i.status))}</b> · ${esc(i.summary)}<br><span class="mono" style="color:var(--muted);font-size:11px">Run ${esc(i.run_id||"unknown")}</span></div>
+  </div>`).join("")}</div>`:`<div class="loading" style="color:var(--teal)">No open issues. Everything is running normally.</div>`;
   $("#sysRuns").innerHTML=(h.runs||[]).map(r=>{
     const c=r.counts||{};
-    return `<tr><td class="mono">${esc(r.run_id)}</td><td><span class="dot" style="background:${healthDot(r.status)}"></span> ${esc(r.status)}</td>
+    return `<tr><td class="mono">${esc(r.run_id)}</td><td><span class="dot" style="background:${healthDot(r.status)}"></span> ${esc(statusLabel(r.status))}</td>
       <td class="num">${dur(r.duration_sec)}</td><td class="num">${c.packages??"—"}</td><td class="num">${c.predictions??"—"}</td>
       <td class="mono" style="color:var(--muted)">${esc(r.git_sha||"—")}</td></tr>`;
-  }).join("")||`<tr><td colspan="6" class="loading">no runs recorded</td></tr>`;
+  }).join("")||`<tr><td colspan="6" class="loading">No runs recorded yet.</td></tr>`;
 }
 
 async function loadPackages(){
@@ -569,10 +620,10 @@ async function openDrawer(name){
     <h2>${name}</h2>
     <div class="mono" style="color:var(--muted);font-size:12px">${p.category||""} · <a href="${repo}" target="_blank">${p.repo||"repo n/a"}</a></div>
     <div class="dscores">
-      <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}</div>
+      <div class="dscore"><div class="lab">Momentum</div><div class="big" style="color:${momColor(p.momentum_score)}">${Math.round(p.momentum_score||0)}<small style="font-size:13px;color:var(--muted)"> / 100</small></div>
         <div class="mono" style="font-size:12px;color:var(--muted)">${p.momentum_label||""} · Δ70d ${logPct(p.growth_pred_70d)}</div>
         <div class="mono" data-testid="interval" style="font-size:12px;color:var(--muted)">${rangeTxt(p)||"range n/a (not calibrated)"}</div></div>
-      <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}</div>
+      <div class="dscore"><div class="lab">Dependency risk</div><div class="big r-${p.risk_level}">${Math.round(p.risk_score||0)}<small style="font-size:13px;color:var(--muted)"> / 100</small></div>
         <div class="mono" style="font-size:12px;color:var(--muted)">${p.risk_level||""} risk · ${
           p.risk_classifier_probability==null
             ? "weighted composite with categorical safety floors"
@@ -817,16 +868,29 @@ function renderAudit(d){
       (s.exposed?`<div class="sub" style="margin-top:10px;color:var(--red)"><b>${s.exposed}</b> pinned version(s) exposed to active CVEs</div>`:"");
     const vc=v=>({critical:"var(--red)",high:"var(--amber)",watch:"var(--muted)",healthy:"var(--teal)"}[v]||"var(--faint)");
     const rows=(d.packages||[]).map(r=>{
-      if(r.status!=="ok") return `<tr><td class="pkg">${r.name}</td><td class="sub" colspan="5">${r.status}</td></tr>`;
-      const vuln=r.vuln_count?`${r.vuln_count} ${r.vuln_kind==="active"?"active":"hist."}${r.max_severity?" \u00b7 "+r.max_severity.toLowerCase():""}`:"\u2014";
+      if(r.status!=="ok") return `<tr><td class="pkg">${esc(r.name)}</td><td class="sub" colspan="5">${esc(sentence(r.status))}</td></tr>`;
+      const sev=r.max_severity?` (${r.max_severity.toLowerCase()} severity)`:"";
+      const vuln=r.vuln_count?`${r.vuln_count} ${r.vuln_kind==="active"?"affecting this version":"in the package's history"}${sev}`:"None known";
       const tr=r.trend_pct==null?"\u2014":(r.trend_pct>=0?"+":"")+r.trend_pct+"%";
-      return `<tr class="row"><td class="pkg">${r.name}${r.version?'<small style="color:var(--faint)"> =='+r.version+'</small>':''}</td>`+
-        `<td style="color:${vc(r.verdict)};font-family:var(--mono);font-weight:600">${r.verdict}</td>`+
-        `<td class="num">${r.risk_score==null?"\u2014":r.risk_score}</td><td class="mono" style="font-size:12px">${vuln}</td>`+
-        `<td class="num">${r.days_since_release==null?"\u2014":r.days_since_release+"d"}</td><td class="num">${tr}</td></tr>`+
-        `<tr><td colspan="6" class="sub" style="padding:0 10px 10px;border:none">${r.reason}</td></tr>`;
+      return `<tr class="row"><td class="pkg">${esc(r.name)}${r.version?'<small style="color:var(--faint)"> =='+esc(r.version)+'</small>':''}</td>`+
+        `<td style="color:${vc(r.verdict)};font-family:var(--mono);font-weight:600">${esc(r.verdict)}</td>`+
+        `<td class="num" title="Risk score out of 100. Higher means riskier.">${riskCell(r.risk_score)}</td><td class="mono" style="font-size:12px">${esc(vuln)}</td>`+
+        `<td class="num">${sinceRelease(r.days_since_release)}</td><td class="num">${tr}</td></tr>`+
+        `<tr><td colspan="6" class="sub" style="padding:0 10px 10px;border:none">${esc(sentence(r.reason))}</td></tr>`;
     }).join("");
-    $("#auditResults").innerHTML=`<table><thead><tr><th>package</th><th>verdict</th><th>risk</th><th>vulns</th><th>last release</th><th>trend</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const th=(t,tip)=>`<th title="${tip}">${t}</th>`;
+    $("#auditResults").innerHTML=`<table><thead><tr>${th("Package","The package and the version you pinned, if any.")}${th("Verdict","Our overall call: healthy, watch, high or critical.")}${th("Risk score","A 0 to 100 score. Higher means riskier. Under 40 is low, 40 to 65 is medium, 66 and above is high.")}${th("Known vulnerabilities","Published security advisories (CVEs). Pin a version to see only those that affect it.")}${th("Last release","How long ago the package last published a release.")}${th("Download trend","Downloads over the last 7 days compared with the 7 days before.")}</tr></thead><tbody>${rows}</tbody></table>
+    <details class="legend" open><summary>How to read this table</summary>
+      <p><b>Risk score</b> is a 0 to 100 score built from recent vulnerabilities, time since the last release,
+         how concentrated the maintainers are, the OpenSSF security score and the issue backlog.
+         Higher means riskier. Under 40 is <b>low</b>, 40 to 65 is <b>medium</b>, and 66 or more is <b>high</b>.</p>
+      <p><b>Verdict</b> is our overall call.
+         <b>Critical</b> means the package is archived, or your pinned version has an active high or critical CVE.
+         <b>High</b> means your pinned version has any active CVE, or the risk score is 66 or more.
+         <b>Watch</b> means no release in a year, downloads down more than 20% in a week, past CVEs, or a risk score of 40 or more.
+         Anything else is <b>healthy</b>.</p>
+      <p><b>Download trend</b> compares the last 7 days of downloads with the 7 days before.</p>
+    </details>`;
 }
 async function selfAudit(){
   $("#auditNote").textContent="loading OSS Radar's stored self-audit\u2026";
@@ -854,10 +918,10 @@ async function loadAgents(){
   acts.forEach(a=>{const d=(a.run_id||"").slice(0,8)||(a.ts||"").slice(0,10);(byDay[d]=byDay[d]||[]).push(a);});
   const dotc=s=>s==="ok"?"var(--teal)":s==="warning"?"var(--amber)":s==="error"?"var(--red)":"var(--faint)";
   $("#timeline").innerHTML=Object.entries(byDay).map(([day,list])=>
-    `<div class="tl-day">${day}</div>`+list.map(a=>`<div class="act">
-      <div class="ag"><span class="dot" style="background:${dotc(a.status)}"></span> <b>${a.agent}</b>${a.action}</div>
+    `<div class="tl-day">${niceDate(day)}</div>`+list.map(a=>`<div class="act">
+      <div class="ag"><span class="dot" style="background:${dotc(a.status)}"></span> <b>${esc(agentLabel(a.agent))}</b> · ${esc(actionLabel(a.action))}</div>
       <div class="body">${a.summary||""} ${a.artifact_url?`<br><small><a href="${a.artifact_url}" target="_blank">${a.artifact_url}</a></small>`:""}</div>
-    </div>`).join("")).join("")||"<div class='loading'>no agent activity yet</div>";
+    </div>`).join("")).join("")||"<div class='loading'>No agent activity yet.</div>";
 }
 
 (async function(){

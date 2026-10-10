@@ -11,6 +11,7 @@ import re
 import numpy as np
 import pandas as pd
 
+from oss_radar.textfmt import age_phrase, count, duration, join_and, source_mode, stage_label
 from oss_radar.config import get_settings
 from oss_radar.source_health import github_recovery_guidance
 from oss_radar.warehouse import get_warehouse
@@ -194,6 +195,153 @@ def _source_health(wh) -> list[dict]:
     return rows
 
 
+def _agent_name(raw) -> str:
+    """'DataScientist' -> 'Data Scientist'."""
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(raw or "Agent"))
+
+
+def _counts_sentence(counts: dict) -> str:
+    """Turn the run's raw counters into a short, readable summary."""
+    c = dict(counts or {})
+    parts: list[str] = []
+    packages, predictions = c.pop("packages", None), c.pop("predictions", None)
+    if packages is not None:
+        parts.append(
+            f"Processed {count(packages)} packages"
+            + (f" and wrote {count(predictions)} predictions" if predictions is not None else "")
+        )
+    elif predictions is not None:
+        parts.append(f"Wrote {count(predictions)} predictions")
+    growth, risk = c.pop("training_rows", None), c.pop("risk_training_rows", None)
+    if growth is not None or risk is not None:
+        bits = []
+        if growth is not None:
+            bits.append(f"{count(growth)} growth rows")
+        if risk is not None:
+            bits.append(f"{count(risk)} risk rows")
+        parts.append(f"Training data: {join_and(bits)}")
+    history = c.pop("download_history_rows", None)
+    if history is not None:
+        parts.append(f"Download history: {count(history)} rows")
+    mode = c.pop("source_mode", None)
+    if mode is not None:
+        parts.append(f"Data came from {source_mode(mode)}")
+    c.pop("activities", None)
+    parts.extend(f"{str(k).replace('_', ' ').capitalize()}: {v}" for k, v in c.items())
+    return ". ".join(parts) + "." if parts else ""
+
+
+def _stage_detail(name: str, counts: dict, share: float | None) -> str:
+    """One technical line per stage: what it handled, and how much of the run it took."""
+    c = counts or {}
+    bits: list[str] = []
+    if name == "ingest" and c.get("packages") is not None:
+        bits.append(f"{count(c['packages'])} packages collected")
+        if c.get("source_mode"):
+            bits.append(f"from {source_mode(c['source_mode'])}")
+    elif name == "features":
+        if c.get("training_rows") is not None:
+            bits.append(f"{count(c['training_rows'])} growth training rows")
+        if c.get("risk_training_rows") is not None:
+            bits.append(f"{count(c['risk_training_rows'])} risk training rows")
+        if c.get("download_history_rows") is not None:
+            bits.append(f"{count(c['download_history_rows'])} days of download history")
+    elif name == "train":
+        bits.append("candidate growth and risk models trained; promotion decisions follow below")
+    elif name == "score" and c.get("predictions") is not None:
+        bits.append(f"{count(c['predictions'])} predictions written")
+    elif name == "self_audit":
+        bits.append("this project's own dependencies checked for known vulnerabilities")
+    elif name == "agents" and c.get("activities") is not None:
+        bits.append(f"{count(c['activities'])} agent activities recorded")
+    if share is not None:
+        bits.append("under 1% of run time" if share < 0.01 else f"{round(share * 100)}% of run time")
+    return " · ".join(bits)
+
+
+def _prediction_summary(preds: pd.DataFrame, run_id) -> str:
+    """'Risk: 11 high, 30 medium, 50 low · Momentum: 0 rising fast, 12 declining' for the run's output."""
+    if preds is None or preds.empty or "risk_level" not in preds:
+        return ""
+    if "run_id" in preds and run_id is not None and not (preds["run_id"] == run_id).any():
+        return ""
+    levels = preds["risk_level"].value_counts()
+    risk = ", ".join(f"{int(levels.get(k, 0))} {k}" for k in ("high", "medium", "low"))
+    momentum = ""
+    if "momentum_label" in preds:
+        labels = preds["momentum_label"].value_counts()
+        momentum = (
+            f" · Momentum: {int(labels.get('high', 0))} rising fast, "
+            f"{int(labels.get('declining', 0))} declining"
+        )
+    return f"Risk: {risk}{momentum}"
+
+
+def _run_log(
+    latest: dict, latest_acts: list[dict], interrupted: list[dict],
+    prediction_summary: str = "", warehouse: str = "",
+) -> list[dict]:
+    """Chronological, readable log of the latest run: start, each stage, agent notes, outcome.
+
+    Each entry has a short ``message`` for scanning and an optional ``detail`` line with the
+    technical specifics (volumes, code version, share of run time).
+    """
+    rid = latest.get("run_id")
+    started = pd.to_datetime(latest.get("started_at"), utc=True, errors="coerce")
+    entries: list[tuple[pd.Timestamp | None, dict]] = []
+
+    def add(ts, level: str, source: str, message: str, detail: str = "") -> None:
+        when = pd.to_datetime(ts, utc=True, errors="coerce")
+        entries.append((None if pd.isna(when) else when, {
+            "ts": None if pd.isna(when) else when.isoformat(), "level": level,
+            "source": source, "message": message, "detail": detail,
+        }))
+
+    sha = str(latest.get("git_sha") or "")[:7]
+    add(latest.get("started_at"), "ok", "Pipeline", f"Run {rid} started.",
+        " · ".join(b for b in (f"Code version {sha}" if sha else "", f"Warehouse {warehouse}" if warehouse else "") if b))
+    stages = latest.get("stages") or {}
+    numeric = [float(v) for v in stages.values() if isinstance(v, (int, float))]
+    total = sum(numeric) or None
+    counts = latest.get("counts") or {}
+    clock = started
+    for name, seconds in stages.items():
+        try:
+            seconds = float(seconds)
+        except (TypeError, ValueError):
+            add(clock if not pd.isna(clock) else None, "ok", "Pipeline", f"{stage_label(name)} finished.")
+            continue
+        if not pd.isna(clock):
+            clock = clock + pd.Timedelta(seconds=seconds)
+        detail = _stage_detail(name, counts, seconds / total if total else None)
+        if name == "score" and prediction_summary:
+            detail = f"{prediction_summary} · {detail}" if detail else prediction_summary
+        add(clock if not pd.isna(clock) else None, "ok", "Pipeline",
+            f"{stage_label(name)} finished in {duration(seconds)}.", detail)
+    summary = _counts_sentence(counts)
+    if summary:
+        add(latest.get("finished_at"), "ok", "Pipeline", summary)
+    for a in latest_acts:
+        add(a.get("ts"), a.get("status") or "ok", _agent_name(a.get("agent")),
+            a.get("summary") or a.get("action") or "")
+    took = latest.get("duration_sec")
+    if str(latest.get("status") or "").lower() in ("success", "ok"):
+        message = "Run completed successfully" + (f" in {duration(took)}." if took else ".")
+        add(latest.get("finished_at"), "ok", "Pipeline", message)
+    else:
+        message = f"Run ended with status \u201c{latest.get('status')}\u201d" + (
+            f" after {duration(took)}." if took else ".")
+        reason = (counts or {}).get("reason")
+        add(latest.get("finished_at") or latest.get("started_at"), "error", "Pipeline", message,
+            f"Reason: {reason}" if reason else "")
+    for row in interrupted[:3]:
+        add(row.get("ts"), "info", "Pipeline", f"Earlier run {row.get('run_id')}: {row.get('summary')}")
+
+    far_future = pd.Timestamp.max.tz_localize("UTC")
+    entries.sort(key=lambda pair: pair[0] if pair[0] is not None else far_future)
+    return [entry for _, entry in entries]
+
+
 def system_health(limit: int = 30) -> dict:
     """Current health summary with recent run history retained for inspection."""
     wh = _wh()
@@ -241,27 +389,46 @@ def system_health(limit: int = 30) -> dict:
 
     issues = []
     warnings = []
+    interrupted = []  # old runs that never reported completion but were superseded by a later success
     for index, r in enumerate(runs):
         status = str(r.get("status") or "").lower()
         if status == "running":
             running_age = _age_hours(r.get("started_at"))
-            record = {
-                "run_id": r.get("run_id"),
-                "ts": r.get("started_at"),
-                "source": "pipeline",
-                "status": "running",
-                "summary": (
-                    f"Pipeline execution has remained running for {running_age:.1f}h"
-                    if running_age is not None
-                    else "Pipeline execution is running with an unknown start time"
-                ),
-            }
-            (issues if running_age is None or running_age > 1.0 else warnings).append(record)
+            rid = r.get("run_id")
+            if running_age is None:
+                record = {
+                    "run_id": rid, "ts": r.get("started_at"), "source": "pipeline", "status": "running",
+                    "summary": "A run is marked in progress but has no start time, so its age is unknown.",
+                }
+                issues.append(record)
+            elif running_age <= 1.0:
+                warnings.append({
+                    "run_id": rid, "ts": r.get("started_at"), "source": "pipeline", "status": "running",
+                    "summary": f"A run is still in progress. It started {age_phrase(running_age)}.",
+                })
+            elif any(str(later.get("status") or "").lower() in ("success", "ok") for later in runs[:index]):
+                # A later run succeeded, so this one was interrupted (for example, a job that was
+                # stopped). It stays visible in the log but must not keep the service badge red.
+                interrupted.append({
+                    "run_id": rid, "ts": r.get("started_at"), "source": "pipeline", "status": "interrupted",
+                    "summary": (
+                        f"This run started {age_phrase(running_age)} and never reported completion. "
+                        "A later run succeeded, so current health is unaffected."
+                    ),
+                })
+            else:
+                issues.append({
+                    "run_id": rid, "ts": r.get("started_at"), "source": "pipeline", "status": "running",
+                    "summary": (
+                        f"This run started {age_phrase(running_age)} and never reported completion. "
+                        "No later run has succeeded, so the pipeline may be stuck. Check the job logs."
+                    ),
+                })
         elif index == 0 and status not in ("success", "ok"):
             issues.append({
                 "run_id": r.get("run_id"), "ts": r.get("finished_at") or r.get("started_at"),
                 "source": "pipeline", "status": r.get("status") or "unknown",
-                "summary": f"Pipeline run ended with status {r.get('status') or 'unknown'}",
+                "summary": f"The latest run ended with status \u201c{r.get('status') or 'unknown'}\u201d.",
             })
     # Recovered warnings remain visible in run/agent history, but they must not keep
     # the current service badge yellow after a later clean run.
@@ -293,42 +460,35 @@ def system_health(limit: int = 30) -> dict:
                 "source": "scheduler",
                 "status": "stale",
                 "summary": (
-                    f"Latest successful run is {success_age:.1f}h old "
-                    f"(freshness SLA {freshness_hours:.0f}h)"
+                    f"The latest successful run finished {age_phrase(success_age)}. "
+                    f"That is older than the {freshness_hours:.0f}-hour freshness target, "
+                    "so the daily schedule may have stopped."
                     if success_age is not None
-                    else "Latest successful run has no usable completion timestamp"
+                    else "The latest successful run has no usable completion time, so its age is unknown."
                 ),
             })
 
     health_status = "red" if issues else "yellow" if warnings else "green"
+    for r in runs:  # show superseded stuck runs as interrupted in the history table too
+        if any(row["run_id"] == r.get("run_id") for row in interrupted):
+            r["status"] = "interrupted"
     run_days = len({r["run_date"] for r in runs if r.get("run_date")})
-    logs = [{
-        "ts": latest.get("started_at"), "level": "ok" if latest.get("status") == "success" else "error",
-        "source": "pipeline", "message": f"Run {latest_run_id} status: {latest.get('status')}",
-    }]
-    for name, seconds in latest.get("stages", {}).items():
-        logs.append({
-            "ts": latest.get("finished_at"), "level": "ok",
-            "source": "stage", "message": f"{name} completed in {seconds}s",
-        })
-    counts = latest.get("counts", {})
-    if counts:
-        logs.append({
-            "ts": latest.get("finished_at"), "level": "ok", "source": "counts",
-            "message": ", ".join(f"{k}={v}" for k, v in counts.items()),
-        })
-    for a in sorted(latest_acts, key=lambda x: str(x.get("ts") or "")):
-        logs.append({
-            "ts": a.get("ts"), "level": a.get("status") or "ok",
-            "source": a.get("agent") or "agent",
-            "message": f"{a.get('action')}: {a.get('summary')}",
-        })
+    try:
+        prediction_summary = _prediction_summary(latest_predictions(), latest_run_id)
+    except Exception:  # noqa: BLE001 - the log is still useful without the summary line
+        prediction_summary = ""
+    logs = _run_log(latest, latest_acts, interrupted, prediction_summary, active_warehouse_label())
 
-    headline = (
-        f"green: {run_days} run day(s), no warnings or errors"
-        if health_status == "green"
-        else f"{health_status}: {len(issues)} error(s), {len(warnings)} warning(s)"
-    )
+    if health_status == "green":
+        age = _age_hours(latest.get("finished_at"))
+        headline = (
+            f"Healthy. The latest run succeeded {age_phrase(age)}."
+            if age is not None else "Healthy. The latest run succeeded."
+        )
+    elif health_status == "yellow":
+        headline = f"Degraded. {len(warnings)} warning(s) need a look."
+    else:
+        headline = f"Needs attention. {len(issues)} open issue(s) found."
     return _clean({
         "data_state": "ready",
         "warehouse": active_warehouse_label(),

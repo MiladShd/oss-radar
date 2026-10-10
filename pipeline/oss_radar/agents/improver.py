@@ -32,33 +32,34 @@ def _experiment_table(results: list[dict]) -> str:
 def run_improver(ctx: AgentContext, train_df: pd.DataFrame | None, active_download: list[str]) -> None:
     margin = ctx.settings.feature_lift_margin
     if train_df is None or len(train_df) < ctx.settings.min_train_rows:
-        ctx.record(AGENT, "feature_experiment", "ok", "Insufficient data for feature experiments; skipped.")
+        ctx.record(AGENT, "feature_experiment", "ok", f"Skipped feature experiments: not enough training data yet (need at least {ctx.settings.min_train_rows:,} rows, have {0 if train_df is None else len(train_df):,}).")
         return
 
     candidates = [c for c in CANDIDATE_DOWNLOAD_FEATURES if c not in active_download]
     if not candidates:
-        ctx.record(AGENT, "feature_experiment", "ok", "All candidate features already active.")
+        ctx.record(AGENT, "feature_experiment", "ok", "No feature experiments to run: every candidate feature is already active.")
         return
 
     results = evaluate_candidates(train_df, active_download, candidates, seed=ctx.settings.random_seed)
     summary = ", ".join(
-        f"{r['candidate']} Δ{r['delta']:+.3f}" if r["delta"] is not None else f"{r['candidate']} n/a"
+        f"{r['candidate']} {r['delta']:+.3f}" if r["delta"] is not None else f"{r['candidate']} unavailable"
         for r in results
     )
     ctx.record(AGENT, "feature_experiment", "ok",
-               f"Tested {len(results)} candidate features with nested development-only "
-               f"Spearman selection: {summary}.")
+               f"Tested {len(results)} candidate feature(s) against the growth model. "
+               f"Change in Spearman rank correlation: {summary}. "
+               f"A feature must add at least {margin:+.3f} to be proposed.")
 
     best = best_candidate(results, margin)
     if not best:
         ctx.record(AGENT, "propose_feature", "ok",
-                   f"No candidate beat the +{margin:.3f} lift bar; active feature set unchanged.")
+                   f"No candidate feature reached the {margin:+.3f} improvement bar, so the active feature set is unchanged.")
         return
 
     if ctx.dry_run or not ctx.settings.github_token:
         ctx.record(AGENT, "open_pull_request", "skipped",
-                   f"Would propose enabling '{best['candidate']}' (Δspearman {best['delta']:+.3f}); "
-                   "PR skipped (dry-run / no token).")
+                   f"Would propose enabling '{best['candidate']}' ({best['delta']:+.3f} Spearman). "
+                   "Skipped opening a pull request because this is a dry run or no GitHub token is set.")
         return
 
     content = json.dumps(with_candidate(best["candidate"]), indent=2) + "\n"
@@ -79,5 +80,5 @@ def run_improver(ctx: AgentContext, train_df: pd.DataFrame | None, active_downlo
         body=body, labels=["oss-radar", "self-improvement", "model"],
     )
     ctx.record(AGENT, "open_pull_request", "ok" if url else "warning",
-               (f"Proposed enabling '{best['candidate']}' (Δspearman {best['delta']:+.3f})."
-                if url else "PR creation returned no URL."), url or "")
+               (f"Opened a pull request to enable '{best['candidate']}' ({best['delta']:+.3f} Spearman)."
+                if url else "Could not open the pull request: GitHub returned no URL."), url or "")
