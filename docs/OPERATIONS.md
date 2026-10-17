@@ -295,3 +295,24 @@ updating production runtimes. The deploy workflow owns image digests, runtime
 provenance, and dashboard traffic after bootstrap, while Terraform lifecycle rules ignore those release fields and
 protect Artifact Registry, both data buckets, BigQuery, and Cloud Run resources. The artifact/model and build-source
 buckets both enforce public-access prevention, `force_destroy = false`, and `prevent_destroy`.
+
+## 8. A run that failed, stalled or was interrupted
+
+The System tab reads the last 30 runs. A run can end four ways, and each is recorded:
+
+| Status | Meaning | What to do |
+|---|---|---|
+| **Succeeded** | Every stage finished. | Nothing. |
+| **Failed** | The pipeline raised an error and recorded it before exiting. | Read the error type in the run's counts, then the job logs. |
+| **Failed, `PipelineInterrupted`** | Cloud Run sent SIGTERM, usually because the 30-minute job timeout was reached. The run records the reason before it exits. | Check which upstream source was slow. See the example below. |
+| **Failed, `OrphanedRun`** | The process was killed without a chance to record anything, so the row stayed "running". The next run closes any run still "running" after 3 hours. | Treat it like an interruption. |
+
+Health status follows the **latest** state, not history. A stuck run that a later run superseded is shown as
+*Interrupted* in the log and run table but does not turn the service red. A stuck run with no later success does.
+
+**Example (23 September 2026).** `repos.ecosyste.ms` timed out on nearly every request, so ingestion ran past the
+30-minute task timeout and Cloud Run stopped it. The one automatic retry hit the same outage. Neither attempt could
+record a final status, which left two runs stuck as "running" and turned the System tab red for two weeks although
+every later run succeeded. Those two outcomes are what the interruption handling and the orphan cleanup above now
+cover. A bounded time budget for ingestion, so that a slow source is skipped instead of consuming the whole run,
+remains a sensible follow-up.
