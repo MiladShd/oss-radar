@@ -1,5 +1,5 @@
 # Pipeline image — daily ETL + train + score + agents (Cloud Run Job).
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ARG GIT_SHA=unknown
 ENV PYTHONUNBUFFERED=1 \
