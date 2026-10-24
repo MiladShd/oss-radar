@@ -338,8 +338,11 @@ def test_system_health_reports_green_run_and_logs(client):
     assert body["run_days"] == 1
     assert body["error_count"] == 0
     assert body["warning_count"] == 0
-    assert any("Run smoke-run status: success" in log["message"] for log in body["logs"])
-    assert any(log["source"] == "DataEngineer" for log in body["logs"])
+    messages = [log["message"] for log in body["logs"]]
+    assert "Run smoke-run started." in messages
+    assert any(m.startswith("Run completed successfully") for m in messages)
+    assert any(log["source"] == "Data Engineer" for log in body["logs"])
+    assert body["headline"].startswith("Healthy.")
 
 
 def test_system_health_recovers_after_historical_failure_and_warning(client):
@@ -510,3 +513,67 @@ def test_initialized_warehouse_has_explicit_first_run_state(tmp_path, monkeypatc
     finally:
         main._response_cache.clear()
         empty.close()
+
+
+def _run_row(run_id, started, status, finished=None):
+    return {
+        "run_id": run_id, "started_at": started, "finished_at": finished, "status": status,
+        "stages": {"ingest": 444.0, "train": 1.9}, "counts": {"packages": 91, "predictions": 91,
+        "training_rows": 3094, "source_mode": "live"}, "git_sha": "abc1234",
+    }
+
+
+def test_superseded_stuck_run_is_history_not_an_error(client):
+    """A run stuck as 'running' that a later run superseded must not turn the service red."""
+    from dashboard.app import queries
+
+    wh = queries._wh()
+    old = _NOW - dt.timedelta(days=15)
+    wh.insert_rows("pipeline_runs", [_run_row("stuck-run", old, "running")])
+    body = client.get("/api/system-health").json()
+    assert body["status"] == "green"
+    assert body["error_count"] == 0
+    info = [log for log in body["logs"] if log["level"] == "info"]
+    assert info and "stuck-run" in info[0]["message"]
+    assert "later run succeeded" in info[0]["message"]
+    stuck = next(r for r in body["runs"] if r["run_id"] == "stuck-run")
+    assert stuck["status"] == "interrupted"  # history table agrees with the log
+
+
+def test_stuck_run_with_no_later_success_is_an_error(client, monkeypatch):
+    from dashboard.app import queries
+
+    wh = queries._wh()
+    wh.insert_rows("pipeline_runs", [_run_row("newest-stuck", _NOW + dt.timedelta(hours=1), "running")])
+    monkeypatch.setattr(queries, "_age_hours", lambda value: 20.0)
+    body = client.get("/api/system-health").json()
+    assert body["status"] == "red"
+    issue = body["issues"][0]
+    assert "never reported completion" in issue["summary"]
+    assert "stuck" in issue["summary"]
+    assert "h." not in issue["summary"].split("started")[-1][:12]  # no raw '374.7h' style numbers
+
+
+def test_log_is_chronological_and_readable(client):
+    from dashboard.app import queries
+
+    wh = queries._wh()
+    started = _NOW + dt.timedelta(days=1)
+    wh.insert_rows("pipeline_runs", [_run_row("readable-run", started, "success",
+                                              started + dt.timedelta(seconds=600))])
+    logs = client.get("/api/system-health").json()["logs"]
+    messages = [log["message"] for log in logs]
+    assert messages[0] == "Run readable-run started."
+    assert "Data ingestion finished in 7 min 24 s." in messages
+    assert "Model training finished in 2 s." in messages
+    counts = next(m for m in messages if m.startswith("Processed"))
+    assert "91 packages" in counts and "3,094 growth rows" in counts and "live data sources" in counts
+    assert "=" not in counts  # no raw key=value dump
+    stamps = [log["ts"] for log in logs if log["ts"]]
+    assert stamps == sorted(stamps)  # oldest first
+    assert len({log["ts"] for log in logs if log["source"] == "Pipeline"}) > 3  # real per-stage times
+    by_message = {log["message"]: log for log in logs}
+    assert "Code version abc1234" in by_message["Run readable-run started."]["detail"]
+    ingest = by_message["Data ingestion finished in 7 min 24 s."]["detail"]
+    assert "91 packages collected" in ingest and "live data sources" in ingest
+    assert "% of run time" in ingest  # each stage shows its share of the run
