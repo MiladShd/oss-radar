@@ -209,10 +209,10 @@ def test_audit_requires_input_then_renders_results(page):
         "summary": {"total": 2, "audited": 2, "critical": 0, "high": 1, "watch": 0, "healthy": 1, "exposed": 0},
         "packages": [
             {"name": "vllm", "status": "ok", "verdict": "healthy", "version": "1.0", "vuln_count": 0,
-             "trend_pct": 5, "risk_score": 20, "momentum_score": 80},
+             "trend_pct": 10.2, "risk_score": 14.4, "days_since_release": 0, "reason": "actively maintained"},
             {"name": "langchain", "status": "ok", "verdict": "high", "version": "0.1", "vuln_count": 2,
              "vuln_kind": "active", "max_severity": "HIGH", "trend_pct": -3, "risk_score": 70,
-             "momentum_score": 40},
+             "days_since_release": 400, "reason": "pinned version exposed to 2 high vulns"},
         ],
     }
     page.route("**/api/audit", lambda route: route.fulfill(json=canned))
@@ -222,6 +222,19 @@ def test_audit_requires_input_then_renders_results(page):
     assert "2 of 2 audited" in page.inner_text("#auditSummary")
     assert page.locator("#auditResults tr.row").count() == 2
     assert page.locator("#auditRun").is_enabled()  # button re-enabled after the call
+
+    # The numbers must explain themselves: scale, band, plain-language dates, and a legend.
+    table = page.inner_text("#auditResults")
+    assert "14 / 100 \u00b7 low" in table.replace("\n", " ")
+    assert "70 / 100 \u00b7 high" in table.replace("\n", " ")
+    assert "today" in table and "13 months ago" in table
+    assert "None known" in table and "2 affecting this version (high severity)" in table
+    assert "Actively maintained." in table  # reasons read as sentences
+    assert "0d" not in table and "hist." not in table
+    legend = page.inner_text("#auditResults .legend")
+    assert "Under 40 is low" in legend and "66 or more is high" in legend
+    assert "Critical" in legend and "Watch" in legend and "Download trend" in legend
+    assert "Higher means riskier" in page.get_attribute('#auditResults th:has-text("Risk score")', "title")
 
 
 def test_self_audit_button_triggers_a_request_and_renders_its_result(page):
@@ -247,7 +260,9 @@ def test_agent_activity_timeline_lists_seeded_agents(page):
     page.click('nav.tabs button[data-tab="agents"]')
     page.wait_for_selector("#timeline .act")
     text = page.inner_text("#timeline")
-    assert "DataEngineer" in text and "MLOps" in text
+    assert "Data Engineer" in text and "MLOps" in text
+    assert "Checked ingestion freshness" in text  # readable action label, not check_ingestion_freshness
+    assert "check_ingestion_freshness" not in text
 
 
 def test_model_history_lists_champions(page):
@@ -271,3 +286,56 @@ def test_mobile_layout_has_no_horizontal_scroll(browser, base_url):
     overflow = pg.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 1, f"page overflows horizontally by {overflow}px on a 375px screen"
     ctx.close()
+
+
+def test_system_tab_reads_clearly(page):
+    page.click('nav.tabs button[data-tab="system"]')
+    page.wait_for_selector("#sysLogs .sys-row")
+    banner = page.inner_text("#sysBanner")
+    assert "Healthy" in banner and "green" not in banner.lower().split("latest")[0]
+    logs = page.inner_text("#sysLogs")
+    assert "Run smoke-run started." in logs
+    assert "Run completed successfully" in logs
+    assert "Data Engineer" in logs  # role names are spaced, not CamelCase
+    assert "completed in" not in logs and "=" not in logs  # no raw "x completed in 4.0s" / key=value dumps
+    assert "No open issues" in page.inner_text("#sysIssues")
+    kpis = page.inner_text("#sysKpis").lower()
+    assert "open issues" in kpis and "runs on record" in kpis
+
+
+def test_source_health_uses_friendly_names(page):
+    page.wait_for_selector("#sourceHealth table")
+    text = page.inner_text("#sourceHealth")
+    assert "GitHub" in text
+    assert "ecosystems_pkg" not in text and "pypi_downloads" not in text
+
+
+MAX_WORDS_PER_SENTENCE = 30
+
+
+@pytest.mark.parametrize("tab", VISIBLE_TABS)
+def test_static_copy_sentences_stay_short(page, tab):
+    """Copy guardrail: introductory text must stay scannable (no 40-word run-on sentences)."""
+    page.click(f'nav.tabs button[data-tab="{tab}"]')
+    page.wait_for_selector(f'section[data-view="{tab}"]:not([hidden])')
+    blocks = page.eval_on_selector_all(
+        f'section[data-view="{tab}"] .hero p, section[data-view="{tab}"] .panel > .sub:not([id])',
+        "els => els.map(e => e.innerText)",
+    )
+    import re
+
+    for block in blocks:
+        for sentence in re.split(r"(?<=[.!?])\s+", block.strip()):
+            words = len(sentence.split())
+            assert words <= MAX_WORDS_PER_SENTENCE, f"{words}-word sentence on {tab}: {sentence!r}"
+
+
+def test_system_log_filter_and_detail_lines(page):
+    page.click('nav.tabs button[data-tab="system"]')
+    page.wait_for_selector("#sysLogs .sys-row")
+    assert page.locator("#sysLogs .sys-row").count() >= 4
+    assert page.locator("#sysLogs .detail").count() >= 1  # technical detail line under a message
+    page.select_option("#sysLevel", "attention")
+    assert "No warnings or errors in the latest run." in page.inner_text("#sysLogs")
+    page.select_option("#sysLevel", "all")
+    assert page.locator("#sysLogs .sys-row").count() >= 4
