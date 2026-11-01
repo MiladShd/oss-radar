@@ -1,0 +1,1 @@
+{"version":1,"surface":"additive-research-page","mode":"operate","source":"dashboard/app/static/design-system.css","colors":{"bg":"#080b10","panel":"#10171f","ink":"#e8f0f5","muted":"#7d93a3","teal":"#2ee6c4","amber":"#ffb347"},"typography":{"bodyFamily":"Space Grotesk","dataFamily":"IBM Plex Mono"},"routes":{"application":"/","evidenceReport":"/evidence"}}

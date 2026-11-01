@@ -46,10 +46,10 @@ header{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
 .brand b{font-weight:700;letter-spacing:.5px;font-size:18px}
 .brand span{display:block;font-size:11px;color:var(--muted);letter-spacing:.3px;margin-top:1px}
 nav.tabs{margin-left:auto;display:flex;gap:4px}
-nav.tabs button{font-family:var(--mono);font-size:12.5px;color:var(--muted);background:transparent;border:1px solid transparent;
+nav.tabs :is(button,a){font-family:var(--mono);font-size:12.5px;color:var(--muted);background:transparent;border:1px solid transparent;
   padding:8px 13px;border-radius:8px;cursor:pointer;transition:.15s}
-nav.tabs button:hover{color:var(--ink);background:var(--panel)}
-nav.tabs button.on{color:var(--teal);border-color:var(--line2);background:var(--panel)}
+nav.tabs :is(button,a):hover{color:var(--ink);background:var(--panel)}
+nav.tabs :is(button,a).on{color:var(--teal);border-color:var(--line2);background:var(--panel)}
 .gh{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line2);
   padding:7px 11px;border-radius:8px;white-space:nowrap}
 .gh:hover{color:var(--ink);border-color:var(--teal-d)}
@@ -143,7 +143,8 @@ tr.row:hover td{background:var(--panel2)}
 .sys-row .ts{font-family:var(--mono);color:var(--muted);font-size:11px}
 .loading{color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px;text-align:center}
 .foot{margin-top:40px;color:var(--faint);font-family:var(--mono);font-size:11.5px;text-align:center;line-height:1.7}
-@media(max-width:880px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}nav.tabs button{padding:8px 9px}}
+@media(max-width:880px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}nav.tabs :is(button,a){padding:8px 9px}}
+@media(max-width:760px){.hbar{flex-wrap:wrap}nav.tabs{order:3;width:100%;margin-left:0;flex-wrap:wrap}.hbar>.gh{margin-left:auto}}
 /* --- Wolfram live-derivation panel --- */
 .wl-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:2px 0 4px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .wl-live{color:var(--teal);border:1px solid var(--teal-d);border-radius:999px;padding:3px 9px;font-size:10px;letter-spacing:.5px;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
@@ -201,6 +202,7 @@ tr.row:hover td{background:var(--panel2)}
       <button data-tab="validation">Validation</button>
       <button data-tab="timeseries" style="display:none">Time series</button>
       <button data-tab="agents">Agent activity</button>
+      <a href="/evidence">Research</a>
     </nav>
     <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
   </div>
@@ -865,7 +867,9 @@ async function loadAgents(){
   $("#ghlink").href="https://github.com/"+REPO;
   $("#foot").innerHTML=`OSS Radar · LightGBM · MLflow · BigQuery · Cloud Run · Cloud Scheduler · Claude agents<br>
     open source at <a href="https://github.com/${REPO}" target="_blank">github.com/${REPO}</a>`;
-  loadOverview();
+  const initialView=new URLSearchParams(location.search).get("view");
+  if(initialView&&["overview","system","audit","packages","models","accuracy","validation","agents"].includes(initialView))tab(initialView);
+  else loadOverview();
 })();
 </script>
 </body>
