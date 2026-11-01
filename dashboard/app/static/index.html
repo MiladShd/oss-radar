@@ -849,11 +849,11 @@ async function runAudit(){
   btn.disabled=false;
 }
 async function loadAgents(){
-  const acts=await j("/api/agents");
+  const acts=(await j("/api/agents")).sort((a,b)=>Date.parse(b.ts)-Date.parse(a.ts));
   const byDay={};
   acts.forEach(a=>{const d=(a.run_id||"").slice(0,8)||(a.ts||"").slice(0,10);(byDay[d]=byDay[d]||[]).push(a);});
   const dotc=s=>s==="ok"?"var(--teal)":s==="warning"?"var(--amber)":s==="error"?"var(--red)":"var(--faint)";
-  $("#timeline").innerHTML=Object.entries(byDay).map(([day,list])=>
+  $("#timeline").innerHTML=Object.entries(byDay).sort(([a],[b])=>b.localeCompare(a)).map(([day,list])=>
     `<div class="tl-day">${day}</div>`+list.map(a=>`<div class="act">
       <div class="ag"><span class="dot" style="background:${dotc(a.status)}"></span> <b>${a.agent}</b>${a.action}</div>
       <div class="body">${a.summary||""} ${a.artifact_url?`<br><small><a href="${a.artifact_url}" target="_blank">${a.artifact_url}</a></small>`:""}</div>
