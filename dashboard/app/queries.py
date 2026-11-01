@@ -553,3 +553,60 @@ def runs(limit: int = 30) -> list[dict]:
                 except Exception:  # noqa: BLE001
                     pass
     return out
+
+
+def executive_brief() -> dict:
+    """Read observed changes and assess previously issued forecasts separately."""
+    from dashboard.app.brief import forecast_scorecard, observed_brief
+
+    wh = _wh()
+    frame = wh.query_df(
+        "SELECT s.* FROM snapshots s JOIN pipeline_runs r ON s.run_id = r.run_id "
+        "WHERE r.status = 'success' AND s.snapshot_date IN "
+        "(SELECT DISTINCT s2.snapshot_date FROM snapshots s2 JOIN pipeline_runs r2 "
+        "ON s2.run_id = r2.run_id WHERE r2.status = 'success' "
+        "ORDER BY s2.snapshot_date DESC LIMIT 2) "
+        "ORDER BY s.snapshot_date DESC, s.ingested_at DESC"
+    )
+    if frame.empty:
+        return {"data_state": "empty", "reason": "No successful snapshot runs are available."}
+    frame = frame.drop_duplicates(["snapshot_date", "name"], keep="first")
+    dates = sorted(frame.snapshot_date.unique(), reverse=True)
+    current = _df_records(frame[frame.snapshot_date == dates[0]])
+    previous = _df_records(frame[frame.snapshot_date == dates[1]]) if len(dates) > 1 else []
+    history = _df_records(wh.query_df("SELECT name, date, downloads FROM download_history"))
+    brief = observed_brief(current, previous, history)
+    health = system_health()
+    try:
+        diagnostic = backtest()
+        growth = diagnostic.get("growth") or {}
+        diagnostic = {"growth": {key: growth.get(key) for key in (
+            "metrics", "calibration", "evaluation_provenance")},
+            "served_versions": diagnostic.get("served_versions", {})}
+    except Exception:  # noqa: BLE001
+        diagnostic = {}
+    brief.update({"data_state": "ready", "operations": {
+        "status": health.get("status"), "latest_run": health.get("latest_run"),
+        "issues": health.get("issues", []), "warnings": health.get("warnings", []),
+        "sources": _source_health(wh)}, "diagnostics": diagnostic})
+    try:
+        issued = wh.query_df(
+            "SELECT p.name, p.run_id, p.predicted_at, p.growth_pred_70d, "
+            "p.growth_model_version, f.feature_date FROM predictions p "
+            "JOIN features f ON p.run_id = f.run_id AND p.name = f.name "
+            "JOIN pipeline_runs r ON p.run_id = r.run_id "
+            "WHERE f.is_scoring_row = TRUE AND r.status = 'success' "
+            "AND p.growth_model_version IS NOT NULL "
+            "ORDER BY p.predicted_at ASC"
+        )
+        lineage = wh.query_df("SELECT version, eval_provenance FROM model_runs WHERE model_name = 'growth'")
+        definitions = {r["version"]: _json_obj(r["eval_provenance"]).get("label_version")
+                       for r in _df_records(lineage)}
+        records = _df_records(issued)
+        for record in records:
+            record["label_version"] = definitions.get(record.get("growth_model_version"))
+        brief["forecast_scorecard"] = forecast_scorecard(records, history, brief["as_of"])
+    except Exception:  # noqa: BLE001
+        brief["forecast_scorecard"] = {"state": "error", "rows": [],
+                                       "reason": "Stored forecast evidence could not be loaded. Try again shortly."}
+    return _clean(brief)
