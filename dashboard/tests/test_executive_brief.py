@@ -43,6 +43,7 @@ def test_scorecard_uses_frozen_predictions_and_rejects_late_issuance():
     assert result["mae_log"] > result["baseline_mae_log"]
     assert forecast_scorecard([{**record, "predicted_at": "2026-07-02T00:00:00Z"}], history,
                               "2026-10-31")["unverifiable"] == 1
+    assert forecast_scorecard([{**record, "predicted_at": None}], history, "2026-10-31")["state"] == "unavailable"
     assert forecast_scorecard([record], history[:-1], "2026-10-31")["state"] == "unavailable"
     assert forecast_scorecard([record], history, "2026-07-15")["pending"] == 1
 

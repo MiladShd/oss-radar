@@ -111,7 +111,8 @@ def forecast_scorecard(predictions, history, asof):
             result["unverifiable"] += 1
             result["excluded_definition"] += 1
             continue
-        if not present(row.get("feature_date")) or not present(row.get("growth_pred_70d")):
+        if (not present(row.get("feature_date")) or not present(row.get("growth_pred_70d"))
+                or not present(row.get("predicted_at"))):
             result["unverifiable"] += 1
             continue
         origin = pd.Timestamp(row["feature_date"]).normalize()
