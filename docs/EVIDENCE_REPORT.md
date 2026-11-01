@@ -1,6 +1,6 @@
 # Portfolio evidence report
 
-The existing homepage remains at `/`, simplified to observed download changes and source-backed dependency findings. Blended model-score KPIs are removed from this overview. Technical navigation discloses models, accuracy, validation, logs, and activity. The separate `/evidence` page reports the scientific question, the latest research diagnostic, a conservative stored-forecast scorecard, the evaluation method, observed findings, and operating health. Both pages load the incumbent design system from a shared stylesheet. `/explorer` remains an alias; `?view=accuracy` and `?view=system` deep-link into the application. The read-only `/api/brief` endpoint uses the same warehouse and 60-second application cache as the explorer.
+The existing homepage, model views, statistics, and navigation remain intact at `/`. An added Research navigation link opens the separate `/evidence` page, which reports the scientific question, latest research diagnostic, conservative stored-forecast scorecard, evaluation method, observed findings, and operating health. The report follows the incumbent dark palette, fonts, brand, and components. `/explorer` remains an alias; `?view=accuracy` and `?view=system` deep-link into the application. The read-only `/api/brief` endpoint uses the existing warehouse and 60-second application cache.
 
 ## Evidence boundaries
 

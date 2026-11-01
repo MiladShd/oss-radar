@@ -96,7 +96,7 @@ def page(browser, base_url):
     pg.on("console", lambda m: pg.errors.append(f"console.error: {m.text}") if m.type == "error" else None)
     pg.on("response", lambda r: pg.errors.append(f"HTTP {r.status} {r.url}")
           if r.status >= 400 and r.url.startswith(base_url) else None)
-    pg.goto(base_url + "/explorer", wait_until="networkidle")
+    pg.goto(base_url, wait_until="networkidle")
     yield pg
     ctx.close()
 
@@ -108,23 +108,20 @@ def _ignore_external(errors):
 
 def test_page_loads_without_script_errors(page):
     assert "OSS Radar" in page.title()
-    page.wait_for_function("document.querySelector('#kpis').textContent.includes('packages monitored')")
+    page.wait_for_selector("#kpis .kpi, #kpis > *")
     assert _ignore_external(page.errors) == []
 
 
-def test_overview_reports_observations_without_composite_scores(page):
-    page.wait_for_function("document.querySelector('#kpis').textContent.includes('packages monitored')")
-    assert "4 packages monitored" in page.inner_text("#kpis")  # snapshot coverage, independent of predictions
-    assert "No complete download comparisons" in page.inner_text("#movers")
-    assert page.locator("#movers .scoreN, #risks .scoreN").count() == 0
-    page.locator("summary", has_text="Data sources").click()
+def test_overview_kpis_movers_and_risks(page):
+    page.wait_for_selector("#movers .mvr")
+    assert "2" in page.inner_text("#kpis")  # two tracked packages
+    assert page.locator("#movers .mvr").first.inner_text().lower().startswith("vllm")
+    assert page.locator("#risks .mvr").first.inner_text().lower().startswith("langchain")
     assert "github" in page.inner_text("#sourceHealth").lower()
 
 
 @pytest.mark.parametrize("tab", VISIBLE_TABS)
 def test_every_tab_activates_and_renders_without_errors(page, tab):
-    if tab in {"system", "models", "accuracy", "validation", "agents"}:
-        page.locator("summary", has_text="Technical details").click()
     page.click(f'nav.tabs button[data-tab="{tab}"]')
     page.wait_for_selector(f'section[data-view="{tab}"]:not([hidden])')
     visible = page.locator("section[data-view]:not([hidden])")
@@ -197,9 +194,7 @@ def test_drawer_degrades_gracefully_without_interval(page):
 
 
 def test_clicking_scrim_closes_drawer(page):
-    page.click('nav.tabs button[data-tab="packages"]')
-    page.wait_for_selector("#pbody tr.row")
-    page.click("#pbody tr.row >> nth=0")
+    page.click("#movers .mvr >> nth=0")
     page.wait_for_selector("#drawer.on")
     page.click("#scrim", position={"x": 5, "y": 5})
     page.wait_for_selector("#drawer:not(.on)")
@@ -249,7 +244,6 @@ def test_self_audit_button_triggers_a_request_and_renders_its_result(page):
 
 
 def test_agent_activity_timeline_lists_seeded_agents(page):
-    page.locator("summary", has_text="Technical details").click()
     page.click('nav.tabs button[data-tab="agents"]')
     page.wait_for_selector("#timeline .act")
     text = page.inner_text("#timeline")
@@ -257,7 +251,6 @@ def test_agent_activity_timeline_lists_seeded_agents(page):
 
 
 def test_model_history_lists_champions(page):
-    page.locator("summary", has_text="Technical details").click()
     page.click('nav.tabs button[data-tab="models"]')
     page.wait_for_selector("#mbody tr")
     text = page.inner_text("#mbody").lower()
@@ -273,8 +266,8 @@ def test_unknown_route_and_static_assets(page, base_url):
 def test_mobile_layout_has_no_horizontal_scroll(browser, base_url):
     ctx = browser.new_context(viewport={"width": 375, "height": 812}, is_mobile=True)
     pg = ctx.new_page()
-    pg.goto(base_url + "/explorer", wait_until="networkidle")
-    pg.wait_for_function("document.querySelector('#kpis').textContent.includes('packages monitored')")
+    pg.goto(base_url, wait_until="networkidle")
+    pg.wait_for_selector("#kpis > *")
     overflow = pg.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 1, f"page overflows horizontally by {overflow}px on a 375px screen"
     ctx.close()

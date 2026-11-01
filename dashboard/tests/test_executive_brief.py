@@ -64,7 +64,8 @@ def test_executive_api_and_explorer_remain_separate(tmp_path):
         assert response.status_code == 200
         assert response.json()["data_state"] == "ready"
         assert "Can download history predict" in client.get("/evidence").text
-        assert "What changed in your dependency watchlist?" in client.get("/").text
+        assert "Which packages are gaining momentum" in client.get("/").text
+        assert 'href="/evidence">Research</a>' in client.get("/").text
         assert "/static/design-system.css" in client.get("/evidence").text
         assert "What the operational agents did" in client.get("/explorer").text
     finally:
