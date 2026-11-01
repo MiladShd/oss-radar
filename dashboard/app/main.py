@@ -229,6 +229,11 @@ def api_brief():
 
 @app.get("/")
 def index():
+    return FileResponse(STATIC / "index.html")
+
+
+@app.get("/evidence")
+def evidence():
     return FileResponse(STATIC / "brief.html")
 
 

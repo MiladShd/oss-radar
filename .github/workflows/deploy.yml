@@ -283,9 +283,9 @@ jobs:
 
           html = os.environ["ROOT_HTML"]
           required = (
-              "<title>OSS Radar · Evidence report</title>",
-              'id="evidence"',
-              'id="scorecard"',
+              "<title>OSS Radar — open-source intelligence</title>",
+              'id="movers"',
+              'id="pbody"',
               "<script>",
           )
           missing = [marker for marker in required if marker not in html]

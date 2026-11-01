@@ -63,7 +63,9 @@ def test_executive_api_and_explorer_remain_separate(tmp_path):
         response = client.get("/api/brief")
         assert response.status_code == 200
         assert response.json()["data_state"] == "ready"
-        assert "Can download history predict" in client.get("/").text
+        assert "Can download history predict" in client.get("/evidence").text
+        assert "What changed in your dependency watchlist?" in client.get("/").text
+        assert "/static/design-system.css" in client.get("/evidence").text
         assert "What the operational agents did" in client.get("/explorer").text
     finally:
         queries._wh_cache = prior

@@ -10,179 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<style>
-:root{
-  --bg:#080b10; --bg2:#0d1218; --panel:#10171f; --panel2:#141d27;
-  --line:#1d2a36; --line2:#26384a;
-  --ink:#e8f0f5; --muted:#7d93a3; --faint:#4a5d6b;
-  --teal:#2ee6c4; --teal-d:#0f8f7c; --amber:#ffb347; --red:#ff5c6c;
-  --blue:#5cc8ff; --violet:#9a8cff;
-  --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",system-ui,sans-serif;
-}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
-body{background:
-  radial-gradient(900px 500px at 85% -10%, rgba(46,230,196,.06), transparent 60%),
-  radial-gradient(700px 400px at 0% 0%, rgba(92,200,255,.05), transparent 55%), var(--bg);}
-a{color:var(--teal);text-decoration:none}
-.mono{font-family:var(--mono)}
-.wrap{max-width:1240px;margin:0 auto;padding:0 22px 80px}
-
-/* header */
-header{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
-  background:linear-gradient(180deg,rgba(8,11,16,.92),rgba(8,11,16,.72));border-bottom:1px solid var(--line)}
-.hbar{max-width:1240px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:16px}
-.logo{display:flex;align-items:center;gap:12px}
-.radar{width:34px;height:34px;border-radius:50%;position:relative;flex:0 0 auto;
-  background:radial-gradient(circle,#0c1620 0%,#0a1118 70%);border:1px solid var(--line2);overflow:hidden}
-.radar::before{content:"";position:absolute;inset:0;border-radius:50%;
-  background:conic-gradient(from 0deg, rgba(46,230,196,.0) 0deg, rgba(46,230,196,.55) 40deg, rgba(46,230,196,0) 60deg);
-  animation:sweep 3.6s linear infinite}
-.radar::after{content:"";position:absolute;inset:6px;border-radius:50%;
-  background:radial-gradient(circle, rgba(46,230,196,.5) 0 1.6px, transparent 2px) 7px 9px/100% 100% no-repeat,
-            radial-gradient(circle, rgba(255,179,71,.7) 0 1.6px, transparent 2px) 20px 22px/100% 100% no-repeat;
-  border:1px solid rgba(255,255,255,.04)}
-@keyframes sweep{to{transform:rotate(360deg)}}
-.brand b{font-weight:700;letter-spacing:.5px;font-size:18px}
-.brand span{display:block;font-size:11px;color:var(--muted);letter-spacing:.3px;margin-top:1px}
-nav.tabs{margin-left:auto;display:flex;gap:4px}
-nav.tabs button{font-family:var(--mono);font-size:12.5px;color:var(--muted);background:transparent;border:1px solid transparent;
-  padding:8px 13px;border-radius:8px;cursor:pointer;transition:.15s}
-nav.tabs button:hover{color:var(--ink);background:var(--panel)}
-nav.tabs button.on{color:var(--teal);border-color:var(--line2);background:var(--panel)}
-.gh{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line2);
-  padding:7px 11px;border-radius:8px;white-space:nowrap}
-.gh:hover{color:var(--ink);border-color:var(--teal-d)}
-
-.hero{padding:30px 0 10px}
-.hero h1{font-size:28px;margin:0 0 6px;font-weight:600;letter-spacing:-.3px}
-.hero p{color:var(--muted);margin:0;max-width:760px;font-size:14.5px;line-height:1.5}
-.runbar{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-.pill{border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:999px}
-.pill .ok{color:var(--teal)} .pill .warn{color:var(--amber)} .pill .err{color:var(--red)}
-.first-run{margin:14px 0 0;border:1px solid var(--amber);background:rgba(255,179,71,.07);
-  border-radius:12px;padding:13px 15px;color:var(--muted);font-size:13px;line-height:1.55}
-.first-run b{color:var(--ink)} .first-run code{color:var(--amber);font-family:var(--mono)}
-
-/* kpis */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
-.kpi{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:14px;padding:16px 18px}
-.kpi .k{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
-.kpi .v{font-size:30px;font-weight:600;margin-top:6px;letter-spacing:-.5px}
-.kpi .v small{font-size:13px;color:var(--muted);font-weight:400}
-
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
-.panel h3{margin:0 0 4px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
-.panel .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
-.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-
-.mvr{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
-.mvr:first-of-type{border-top:none}
-.mvr .nm{font-family:var(--mono);font-size:13.5px;min-width:130px;font-weight:500}
-.mvr .nm small{display:block;color:var(--faint);font-size:10.5px;font-weight:400;text-transform:uppercase;letter-spacing:.4px}
-.bar{flex:1;height:8px;background:var(--bg);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
-.bar i{display:block;height:100%;border-radius:6px}
-.scoreN{font-family:var(--mono);font-size:13px;min-width:30px;text-align:right;font-weight:600}
-.reasons{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
-.chip{font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line);
-  padding:2px 7px;border-radius:999px}
-
-/* table */
-.toolbar{display:flex;gap:10px;align-items:center;margin:6px 0 14px}
-.toolbar input{flex:1;background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);
-  font-size:13px;padding:10px 13px;border-radius:10px;outline:none}
-.toolbar input:focus{border-color:var(--teal-d)}
-.toolbar select{background:var(--bg);border:1px solid var(--line2);color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:9px 11px;border-radius:10px}
-table{width:100%;border-collapse:collapse}
-th{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:left;text-transform:uppercase;letter-spacing:.4px;
-  padding:9px 10px;border-bottom:1px solid var(--line2);cursor:pointer;user-select:none;white-space:nowrap}
-th:hover{color:var(--ink)}
-td{padding:11px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
-tr.row{cursor:pointer}
-tr.row:hover td{background:var(--panel2)}
-.pkg{font-family:var(--mono);font-weight:500}
-.cat{font-family:var(--mono);font-size:10.5px;color:var(--muted);border:1px solid var(--line);padding:2px 7px;border-radius:999px}
-.num{font-family:var(--mono);text-align:right}
-.badge{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;font-weight:600}
-.b-high{color:#06281f;background:var(--teal)} .b-norm{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
-.b-decl{color:#2a1607;background:var(--amber)}
-.r-low{color:var(--teal)} .r-medium{color:var(--amber)} .r-high{color:var(--red)}
-
-/* drawer */
-.scrim{position:fixed;inset:0;background:rgba(2,4,7,.6);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.2s;z-index:40}
-.scrim.on{opacity:1;pointer-events:auto}
-.drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--bg2);border-left:1px solid var(--line2);
-  transform:translateX(100%);transition:.25s cubic-bezier(.2,.7,.2,1);z-index:41;overflow-y:auto;padding:24px}
-.drawer.on{transform:none}
-.drawer .x{position:absolute;top:18px;right:18px;cursor:pointer;color:var(--muted);font-family:var(--mono)}
-.drawer h2{font-family:var(--mono);margin:0 0 2px;font-size:22px}
-.dscores{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
-.dscore{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}
-.dscore .lab{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase}
-.dscore .big{font-size:34px;font-weight:600;font-family:var(--mono)}
-.spark{width:100%;height:60px;margin-top:8px}
-.metarow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)}
-.metarow span:first-child{color:var(--muted)}
-
-/* timeline */
-.tl-day{font-family:var(--mono);font-size:12px;color:var(--muted);margin:20px 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
-.act{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
-.act .ag{font-family:var(--mono);font-size:11px;min-width:108px;color:var(--blue)}
-.act .ag b{display:block;color:var(--ink);font-size:12px}
-.act .body{flex:1;font-size:13px;color:var(--ink)}
-.act .body small{color:var(--muted);font-family:var(--mono);font-size:11px}
-.health-banner{display:flex;align-items:center;gap:16px;border:1px solid var(--line);border-radius:14px;padding:18px;background:linear-gradient(180deg,var(--panel),var(--bg2));margin-bottom:18px}
-.health-badge{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.6px;border-radius:999px;padding:6px 12px;font-weight:700}
-.health-green{color:#06281f;background:var(--teal)} .health-yellow{color:#2a1607;background:var(--amber)} .health-red{color:#2a0d12;background:var(--red)} .health-unknown{color:var(--muted);border:1px solid var(--line2)}
-.health-title{font-size:19px;font-weight:600}
-.sys-log{border-top:1px solid var(--line)}
-.sys-row{display:grid;grid-template-columns:92px 90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
-.sys-row .src{font-family:var(--mono);color:var(--blue)}
-.sys-row .msg{color:var(--ink);line-height:1.45}
-.sys-row .ts{font-family:var(--mono);color:var(--muted);font-size:11px}
-.loading{color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px;text-align:center}
-.foot{margin-top:40px;color:var(--faint);font-family:var(--mono);font-size:11.5px;text-align:center;line-height:1.7}
-@media(max-width:880px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}nav.tabs button{padding:8px 9px}}
-/* --- Wolfram live-derivation panel --- */
-.wl-meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:2px 0 4px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-.wl-live{color:var(--teal);border:1px solid var(--teal-d);border-radius:999px;padding:3px 9px;font-size:10px;letter-spacing:.5px;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
-.wl-live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--teal);animation:wlpulse 1.8s infinite}
-@keyframes wlpulse{0%{box-shadow:0 0 0 0 rgba(46,230,196,.5)}70%{box-shadow:0 0 0 7px rgba(46,230,196,0)}100%{box-shadow:0 0 0 0 rgba(46,230,196,0)}}
-.wl-replay{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink);background:transparent;border:1px solid var(--line2);padding:6px 12px;border-radius:8px;cursor:pointer;transition:.15s}
-.wl-replay:hover{border-color:var(--teal-d);color:var(--teal)}
-.wl-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-@media(max-width:820px){.wl-grid{grid-template-columns:1fr}}
-.wl-card{background:linear-gradient(180deg,var(--panel2),var(--bg2));border:1px solid var(--line);border-radius:13px;padding:15px 16px;position:relative;overflow:hidden}
-.wl-card::after{content:"";position:absolute;left:-60%;top:0;width:55%;height:100%;pointer-events:none;
-  background:linear-gradient(90deg,transparent,rgba(46,230,196,.07),transparent);transform:skewX(-18deg);opacity:0}
-.wl-card.run::after{animation:wlshim 1.1s ease-out}
-@keyframes wlshim{from{left:-60%;opacity:1}to{left:135%;opacity:0}}
-.wl-head{display:flex;align-items:center;gap:9px;margin-bottom:6px;flex-wrap:wrap}
-.wl-badge{font-family:var(--mono);font-size:9px;letter-spacing:.5px;padding:3px 7px;border-radius:5px;border:1px solid var(--line2);color:var(--muted)}
-.wl-badge.det{color:var(--teal);border-color:var(--teal-d)}
-.wl-badge.res{color:var(--violet);border-color:#3b3470}
-.wl-title{font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:500;flex:1;min-width:110px}
-.wl-chip{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;opacity:0;transform:scale(1.7) rotate(-6deg);transition:.5s cubic-bezier(.2,1.5,.3,1)}
-.wl-card.stamped .wl-chip{opacity:1;transform:none}
-.wl-chip.ok{color:#06281f;background:var(--teal)}
-.wl-chip.info{color:#06281f;background:var(--blue)}
-.wl-chip.err{color:#2a0d12;background:var(--red)}
-.wl-formula{margin:8px 0 11px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink);overflow-x:auto;overflow-y:hidden;min-height:36px;opacity:0;transition:.55s}
-.wl-card.run .wl-formula{opacity:1}
-.wl-deriv{font-family:var(--mono);font-size:12px}
-.wl-line{display:flex;gap:9px;padding:3px 0;color:var(--ink);opacity:0;transform:translateY(7px);transition:.42s ease}
-.wl-card.run .wl-line{opacity:1;transform:none}
-.wl-k{color:var(--faint);min-width:42px;text-transform:uppercase;font-size:9.5px;letter-spacing:.4px;padding-top:3px}
-.wl-line span:last-child{flex:1;word-break:break-word}
-.wl-xcheck{color:var(--muted);border-top:1px dashed var(--line2);margin-top:6px;padding-top:8px}
-.wl-answer{margin-top:12px;display:flex;align-items:baseline;gap:9px;opacity:0;transform:translateY(7px);transition:.55s}
-.wl-card.run .wl-answer{opacity:1;transform:none}
-.wl-num{font-size:25px;font-weight:600;letter-spacing:-.5px;font-family:var(--mono);color:var(--teal);line-height:1}
-.wl-card[data-status="INFO"] .wl-num{color:var(--blue)}
-.wl-num-lbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-.katex{font-size:1.02em}
-</style>
+<link rel="stylesheet" href="/static/design-system.css">
 </head>
 <body>
 <header>
@@ -191,16 +19,19 @@ tr.row:hover td{background:var(--panel2)}
       <div class="radar"></div>
       <div class="brand"><b>OSS&nbsp;RADAR</b><span>open-source intelligence</span></div>
     </div>
-    <nav class="tabs">
+    <nav class="tabs" aria-label="Main navigation">
       <button data-tab="overview" class="on">Overview</button>
-      <button data-tab="system">System</button>
       <button data-tab="audit">Audit</button>
       <button data-tab="packages">Packages</button>
+      <a href="/evidence">Evidence report</a>
+      <details class="technical-nav"><summary>Technical details</summary><div>
+      <button data-tab="system">System</button>
       <button data-tab="models">Model history</button>
       <button data-tab="accuracy">Accuracy</button>
       <button data-tab="validation">Validation</button>
       <button data-tab="timeseries" style="display:none">Time series</button>
       <button data-tab="agents">Agent activity</button>
+      </div></details>
     </nav>
     <a class="gh" id="ghlink" href="#" target="_blank" rel="noopener">★ GitHub</a>
   </div>
@@ -210,32 +41,30 @@ tr.row:hover td{background:var(--panel2)}
   <!-- OVERVIEW -->
   <section data-view="overview">
     <div class="hero">
-      <h1>Which packages are gaining momentum — and which are becoming risky dependencies?</h1>
-      <p>A self-managing pipeline ingests downloads, GitHub activity, dependency graphs, vulnerabilities and security-health
-         metrics every day, then trains gradient-boosted models to forecast adoption momentum and dependency risk across the
-         Python&nbsp;/&nbsp;AI ecosystem. Seven deterministic operational roles validate each run, gate model promotion,
-         and publish the brief; Claude is optional and never participates in prediction.</p>
+      <h1>What changed in your dependency watchlist?</h1>
+      <p>Review observed download changes, new releases, and recent advisory publications.
+         Check an exact installed version before deciding whether an advisory affects your project.</p>
       <div class="runbar" id="runbar"></div>
     </div>
     <div class="first-run" id="firstRun" hidden></div>
     <div class="kpis" id="kpis"></div>
-    <div class="panel" style="margin-bottom:18px">
-      <h3><span class="dot" style="background:var(--teal)"></span> Source health</h3>
-      <div class="sub">Latest per-source success rates; below 70% is degraded.</div>
-      <div id="sourceHealth"><div class="loading">scanning sources…</div></div>
-    </div>
     <div class="grid2">
       <div class="panel">
-        <h3><span class="dot" style="background:var(--teal)"></span> Momentum movers</h3>
-        <div class="sub">Highest forecast 70-day adoption momentum</div>
+        <h3><span class="dot" style="background:var(--teal)"></span> Observed download changes</h3>
+        <div class="sub">Complete seven-day downloads versus the preceding seven days</div>
         <div id="movers"><div class="loading">scanning…</div></div>
       </div>
       <div class="panel">
-        <h3><span class="dot" style="background:var(--amber)"></span> Rising dependency risk</h3>
-        <div class="sub">Highest composite risk score</div>
+        <h3><span class="dot" style="background:var(--amber)"></span> Dependencies to review</h3>
+        <div class="sub">Source-backed security and maintenance findings; installed-version exposure is unverified</div>
         <div id="risks"><div class="loading">scanning…</div></div>
       </div>
-    </div>
+    </div>    <details class="panel" style="margin:18px 0"><summary>Data sources and collection health</summary>
+      <h3><span class="dot" style="background:var(--teal)"></span> Source health</h3>
+      <div class="sub">Latest per-source success rates; below 70% is degraded.</div>
+      <div id="sourceHealth"><div class="loading">scanning sources…</div></div>
+    </details>
+
   </section>
 
   <!-- SYSTEM -->
@@ -418,6 +247,7 @@ async function j(u){const r=await fetch(u);return r.json();}
 function tab(name){
   $$("nav.tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===name));
   $$("section[data-view]").forEach(s=>s.hidden=s.dataset.view!==name);
+  if(name==="overview")loadOverview();
   if(name==="system") loadSystem();
   if(name==="packages"&&!PKGS.length) loadPackages();
   if(name==="models") loadModels();
@@ -444,6 +274,7 @@ function moverRow(p,scoreKey,colorFn,levelKey){
     </div></div>`;
 }
 
+const numDownloads=n=>Intl.NumberFormat("en").format(n);
 async function loadOverview(){
   const o=await j("/api/overview");
   const first=$("#firstRun");
@@ -458,25 +289,33 @@ async function loadOverview(){
   const lr=o.last_run||{};
   const cnt=lr.counts? (typeof lr.counts==="string"?JSON.parse(lr.counts):lr.counts):{};
   $("#runbar").innerHTML=[
-    `<div class="pill">last run <b class="mono">${lr.run_id||"—"}</b></div>`,
+    `<div class="pill">updated ${shortTs(lr.finished_at||lr.started_at)||"—"} UTC</div>`,
     `<div class="pill"><span class="${lr.status==='success'?'ok':'warn'}">●</span> ${lr.status||"no runs yet"}</div>`,
-    `<div class="pill">${cnt.packages??o.tracked??0} packages</div>`,
-    `<div class="pill">${cnt.predictions??0} scored</div>`
+
   ].join("");
-  $("#kpis").innerHTML=[
-    ["tracked packages",o.tracked??0,""],
-    ["avg momentum",o.avg_momentum??"—","/100"],
-    ["rising fast",o.rising??0,""],
-    ["high risk",o.high_risk??0,""]
-  ].map(([k,v,s])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join("");
+  $("#kpis").className="overview-context";
+  $("#kpis").textContent=`${o.tracked??0} packages monitored. Forecast scores are experimental; research metrics live in the evidence report and technical views.`;
   const sourceRows=o.source_health||[];
   $("#sourceHealth").innerHTML=sourceRows.length?`<table><thead><tr><th>Source</th><th class="num">Success</th><th>Status</th></tr></thead>
     <tbody>${sourceRows.map(s=>`<tr><td class="mono">${esc(s.source)}</td><td class="num">${Math.round((s.success_rate||0)*100)}%</td>
       <td><span class="dot" style="background:${healthDot(s.status)}"></span> ${esc(s.status)}
       ${s.guidance?`<div class="sub">${esc(s.guidance)}</div>`:""}</td></tr>`).join("")}</tbody></table>`
     :"<div class='loading'>no source status recorded yet</div>";
-  $("#movers").innerHTML=(o.movers||[]).map(p=>moverRow(p,"momentum_score",momColor,"momentum_label")).join("")||"<div class='loading'>run the pipeline to populate</div>";
-  $("#risks").innerHTML=(o.risks||[]).map(p=>moverRow(p,"risk_score",riskColor,"risk_level")).join("")||"<div class='loading'>run the pipeline to populate</div>";
+  try{
+    const brief=await j("/api/brief");
+    if(brief.data_state!=="ready")throw Error(brief.reason||"Observed evidence is unavailable.");
+    first.hidden=true;
+    $("#kpis").textContent=`${brief.tracked} packages monitored. Forecast scores are experimental; research metrics live in the evidence report and technical views.`;
+    const changes=(brief.changes||[]).filter(c=>c.kind==="downloads").slice(0,6);
+    $("#movers").innerHTML=changes.map(c=>`<div class="observed-row"><a href="https://pypi.org/project/${encodeURIComponent(c.name)}/" target="_blank" rel="noopener">${esc(c.name)}</a> · <b>${c.delta>=0?"+":""}${(c.delta*100).toFixed(1)}%</b><small>${numDownloads(c.current)} downloads vs ${numDownloads(c.previous)} · window ends ${esc(brief.download_as_of||"unknown")}<br>Includes automated installs; this is activity, not unique adoption.</small></div>`).join("")||"<div class='loading'>No complete download comparisons are available.</div>";
+    const findings=brief.findings||[];
+    $("#risks").innerHTML=findings.slice(0,6).map(f=>`<div class="observed-row"><a href="https://pypi.org/project/${encodeURIComponent(f.name)}/" target="_blank" rel="noopener">${esc(f.name)}</a> · ${esc(f.kind)}<small>${esc(f.evidence)} ${esc(f.action)}</small></div>`).join("")||"<div class='loading'>No findings met the review rules. Missing sources remain unknown.</div>";
+    if(findings.length>6)$("#risks").innerHTML+=`<p class="overview-context">Showing 6 of ${findings.length} findings. <a href="/evidence#attention">Inspect the full report</a>.</p>`;
+  }catch(e){
+    $("#movers").textContent="Observed download evidence could not be loaded. Refresh to retry.";
+    $("#risks").textContent="Dependency findings are unavailable; exposure remains unknown.";
+  }
+
 }
 
 function healthClass(s){return s==="green"?"health-green":s==="yellow"?"health-yellow":s==="red"?"health-red":"health-unknown";}
@@ -863,7 +702,7 @@ async function loadAgents(){
 (async function(){
   try{const o=await j("/api/overview");}catch(e){}
   $("#ghlink").href="https://github.com/"+REPO;
-  $("#foot").innerHTML=`OSS Radar · LightGBM · MLflow · BigQuery · Cloud Run · Cloud Scheduler · Claude agents<br>
+  $("#foot").innerHTML=`OSS Radar · Observed dependency signals<br>
     open source at <a href="https://github.com/${REPO}" target="_blank">github.com/${REPO}</a>`;
   const initialView=new URLSearchParams(location.search).get("view");
   if(initialView&&["overview","system","audit","packages","models","accuracy","validation","agents"].includes(initialView))tab(initialView);
