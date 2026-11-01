@@ -1,0 +1,2 @@
+# Additional dependencies for the offline benchmark only; do not add to production images.
+statsmodels==0.14.6
