@@ -1,0 +1,4 @@
+# Evidence report
+The portfolio report is a reading surface with a working version-audit form. It uses an editorial paper background (#f5f3ed), dark ink (#202c2c), forest links (#23604a), and restrained rust (#943627) for negative outcomes. Georgia carries research headings; system sans carries body and tabular data. The existing dark technical explorer remains intact at /explorer.
+
+Use 1240px maximum width, 40px desktop and 20px mobile gutters, 34px section spacing, 16px body type, 14px notes, 28px section headings, and a responsive 38–62px main heading. Content is separated by thin rules. Evidence tables are primary; no headline composite scores or fabricated KPI outcomes. At 760px collapse paired columns into one. Status must always have text. All dynamic content is escaped; empty, error, unavailable, and pending evidence have explicit wording.

@@ -220,8 +220,20 @@ def api_self_audit():
     ))
 
 
+@app.get("/api/brief")
+def api_brief():
+    return JSONResponse(_cached("executive-brief", queries.executive_brief, {
+        "data_state": "error", "reason": "The evidence warehouse is unavailable. Try again shortly."
+    }))
+
+
 @app.get("/")
 def index():
+    return FileResponse(STATIC / "brief.html")
+
+
+@app.get("/explorer")
+def explorer():
     return FileResponse(STATIC / "index.html")
 
 

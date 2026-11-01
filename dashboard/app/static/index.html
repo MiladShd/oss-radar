@@ -865,7 +865,9 @@ async function loadAgents(){
   $("#ghlink").href="https://github.com/"+REPO;
   $("#foot").innerHTML=`OSS Radar · LightGBM · MLflow · BigQuery · Cloud Run · Cloud Scheduler · Claude agents<br>
     open source at <a href="https://github.com/${REPO}" target="_blank">github.com/${REPO}</a>`;
-  loadOverview();
+  const initialView=new URLSearchParams(location.search).get("view");
+  if(initialView&&["overview","system","audit","packages","models","accuracy","validation","agents"].includes(initialView))tab(initialView);
+  else loadOverview();
 })();
 </script>
 </body>
