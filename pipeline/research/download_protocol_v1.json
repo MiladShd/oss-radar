@@ -1,0 +1,36 @@
+{
+  "protocol_version": "download28-availability-lag1-v1",
+  "data_sha256": "f5825cc6dc65e8d8f023172b8551efa08281ec27a6d06270f4a8184e6d8e1159",
+  "data_source": "pypistats without_mirrors via frozen OSS Radar download_history export",
+  "client_date": "2026-10-31",
+  "data_end": "2026-10-30",
+  "target": "log1p(sum of 28 future daily downloads) minus log1p(sum of last 28 observed daily downloads)",
+  "horizon_days": 28,
+  "availability_lag_days": 1,
+  "issuance": "12:00 UTC on the calendar day after the last observed date",
+  "outcome_start": "UTC calendar day after issuance (observed cutoff + 2 days)",
+  "outcome_end": "observed cutoff + 29 days",
+  "context_days": 84,
+  "training_stride_days": 1,
+  "development_cutoffs": ["2026-06-09", "2026-07-07", "2026-08-04"],
+  "final_cutoffs": ["2026-09-03", "2026-10-01"],
+  "local_models": {
+    "seasonal_naive": "repeat the last observed seven-day sequence; forecast the unobserved bridge day, then the next 28 days",
+    "damped_ets": "statsmodels ExponentialSmoothing: additive trend, damped trend, additive seasonality period 7, last 84 observations scaled by their mean; L-BFGS-B optimization without brute initialization; no bias removal; floor negative point forecasts at zero; seasonal-naive fallback on failed fit with explicit failure count"
+  },
+  "pooled_lightgbm": {
+    "objective": "regression_l1", "n_estimators": 150, "learning_rate": 0.03,
+    "num_leaves": 7, "max_depth": 3, "min_child_samples": 100,
+    "reg_lambda": 1.0, "random_state": 20261031,
+    "n_jobs": 2, "verbosity": -1, "deterministic": true, "force_col_wise": true
+  },
+  "feature_set": ["log_mean_7", "log_mean_28", "log_mean_84", "log_ratio_7", "log_ratio_28", "slope_28", "slope_84", "cv_28", "weekend_ratio", "origin_weekday"],
+  "training_rule": "All feature contexts end at their historical cutoff; all training outcomes must end on or before the current forecast's observed cutoff. No future labels, clipping, package identifiers, early stopping, feature selection, or hyperparameter search.",
+  "primary_metric": "equal-package/equal-period mean absolute error in log growth",
+  "baseline_selection": "select seasonal_naive or damped_ets by development primary error; freeze this baseline before reporting the final comparison",
+  "secondary_metrics": ["median absolute percentage-point growth error", "top-10 actual-mover overlap per origin", "Spearman rank correlation per origin", "mean signed log-growth error"],
+  "promotion_rule": "No promotion from this benchmark alone. Only two final periods; require additional frozen prospective evidence before a production model claim.",
+  "missing_data_rule": "Reject duplicate, missing, non-finite, non-integral, or negative observations. Never fill missing days with zero or drop a model's difficult test cases.",
+  "uncertainty": "Paired package-cluster bootstrap over both final periods is descriptive and conditional on these two periods; it does not estimate general temporal uncertainty.",
+  "limitations": ["retrospective reconstructed availability, not vintage inputs", "current curated watchlist selection, not random ecosystem sample", "only two final forecast windows", "same packages in training and testing", "download counts do not measure unique users or adoption", "28-day benchmark is a different target from production's 70-day smoothed target; metrics are not directly comparable"]
+}
