@@ -1,0 +1,140 @@
+{
+  "selected_baseline": "damped_ets",
+  "final_lightgbm_error_reduction": -0.14937753174181578,
+  "aggregates": [
+    {
+      "split": "development",
+      "model": "damped_ets",
+      "mae_log_growth": 0.13664006307685458,
+      "mean_top_10_hits": 3.3333333333333335,
+      "mean_spearman": 0.409380474597866,
+      "mean_bias_log_growth": 0.03657026071011213
+    },
+    {
+      "split": "development",
+      "model": "pooled_lightgbm",
+      "mae_log_growth": 0.1349868368487003,
+      "mean_top_10_hits": 2.0,
+      "mean_spearman": 0.34619498860921966,
+      "mean_bias_log_growth": 0.05471198217171614
+    },
+    {
+      "split": "development",
+      "model": "seasonal_naive",
+      "mae_log_growth": 0.1368605622272763,
+      "mean_top_10_hits": 4.0,
+      "mean_spearman": 0.359781281520412,
+      "mean_bias_log_growth": 0.020904443747551932
+    },
+    {
+      "split": "final",
+      "model": "damped_ets",
+      "mae_log_growth": 0.20406731408687168,
+      "mean_top_10_hits": 5.0,
+      "mean_spearman": 0.6715480172001911,
+      "mean_bias_log_growth": -0.15237492440507622
+    },
+    {
+      "split": "final",
+      "model": "pooled_lightgbm",
+      "mae_log_growth": 0.23455038577435045,
+      "mean_top_10_hits": 3.0,
+      "mean_spearman": 0.5166161643572427,
+      "mean_bias_log_growth": 0.04807582884913986
+    },
+    {
+      "split": "final",
+      "model": "seasonal_naive",
+      "mae_log_growth": 0.10259952475674072,
+      "mean_top_10_hits": 4.5,
+      "mean_spearman": 0.7021261347348304,
+      "mean_bias_log_growth": -0.0546564518544355
+    }
+  ],
+  "training_audit": [
+    {
+      "cutoff": "2026-06-09",
+      "split": "development",
+      "rows": 2002,
+      "distinct_origins": 22,
+      "latest_training_outcome": "2026-06-09"
+    },
+    {
+      "cutoff": "2026-07-07",
+      "split": "development",
+      "rows": 4550,
+      "distinct_origins": 50,
+      "latest_training_outcome": "2026-07-07"
+    },
+    {
+      "cutoff": "2026-08-04",
+      "split": "development",
+      "rows": 7098,
+      "distinct_origins": 78,
+      "latest_training_outcome": "2026-08-04"
+    },
+    {
+      "cutoff": "2026-09-03",
+      "split": "final",
+      "rows": 9828,
+      "distinct_origins": 108,
+      "latest_training_outcome": "2026-09-03"
+    },
+    {
+      "cutoff": "2026-10-01",
+      "split": "final",
+      "rows": 12376,
+      "distinct_origins": 136,
+      "latest_training_outcome": "2026-10-01"
+    }
+  ],
+  "ets_fallbacks": 0,
+  "paired_comparison": {
+    "estimand": "LightGBM absolute error minus development-selected baseline error; negative favors LightGBM",
+    "mean_difference": 0.030483071687478817,
+    "package_cluster_95_percent_interval": [
+      -0.059565503321511906,
+      0.09980455993361752
+    ],
+    "qualification": "Conditional on two observed final periods. Does not quantify general future-period uncertainty."
+  },
+  "production_promotion": false,
+  "reason": "Retrospective comparison with only two final periods; prospective confirmation required.",
+  "data_sha256": "f5825cc6dc65e8d8f023172b8551efa08281ec27a6d06270f4a8184e6d8e1159",
+  "protocol_sha256": "23c50cd5f2e35e08acd83c413dabed98bd9bb20fbc359ea923fb0a9a45a6beed",
+  "environment": {
+    "python": "3.12.12",
+    "numpy": "2.1.3",
+    "pandas": "2.2.3",
+    "lightgbm": "4.6.0",
+    "statsmodels": "0.14.6",
+    "scipy": "1.18.0"
+  },
+  "experiment_code_commit": "386f177",
+  "source_reconciliation": {
+    "checks": [
+      {
+        "package": "vllm",
+        "compared_days": 28,
+        "matching_days": 28,
+        "first_date": "2026-10-03",
+        "last_date": "2026-10-30"
+      },
+      {
+        "package": "numpy",
+        "compared_days": 28,
+        "matching_days": 28,
+        "first_date": "2026-10-03",
+        "last_date": "2026-10-30"
+      },
+      {
+        "package": "feast",
+        "compared_days": 28,
+        "matching_days": 28,
+        "first_date": "2026-10-03",
+        "last_date": "2026-10-30"
+      }
+    ],
+    "interpretation": "Recent same-provider reconciliation only, not independent confirmation of historical values or adoption."
+  }
+}

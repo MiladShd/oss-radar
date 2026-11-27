@@ -1,0 +1,4 @@
+# Additional dependencies for the offline benchmark only; do not add to production images.
+statsmodels==0.14.6
+# Standalone report/figure renderer
+matplotlib==3.10.8
